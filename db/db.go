@@ -4,7 +4,6 @@ import (
 	"dunkod/config"
 	"dunkod/utils"
 
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -12,7 +11,24 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jmoiron/sqlx"
 )
+
+type DatabaseGame struct {
+	Id          string `db:"id"`
+	Season      string `db:"season"`
+	GameDate    string `db:"game_date"`
+	Matchup     string `db:"matchup"`
+	SeasonType  string `db:"season_type"`
+	WinnerName  string `db:"winner_name"`
+	WinnerID    int    `db:"winner_id"`
+	WinnerScore int    `db:"winner_score"`
+	LoserName   string `db:"loser_name"`
+	LoserID     int    `db:"loser_id"`
+	LoserScore  int    `db:"loser_score"`
+	HomeTeamId  int    `db:"home_team_id"`
+	AwayTeamId  int    `db:"away_team_id"`
+}
 
 func SetupDatabase() error {
 	_, err := os.Stat(config.DatabaseFile)
@@ -44,7 +60,7 @@ func RunMigrations() error {
 }
 
 func ValidateMigrations() error {
-	db, err := sql.Open("sqlite3", config.DatabaseFile)
+	db, err := sqlx.Open("sqlite3", config.DatabaseFile)
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
@@ -75,3 +91,38 @@ func ValidateMigrations() error {
 	}
 	return nil
 }
+
+func InsertGames(games []DatabaseGame) error {
+	db, err := sqlx.Open("sqlite3", config.DatabaseFile)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	query := `
+		REPLACE INTO games (
+			id, season, game_date, matchup, season_type, winner_name,
+			winner_id, winner_score, loser_name, loser_id, loser_score,
+			home_team_id, away_team_id
+		) VALUES (
+			:id, :season, :game_date, :matchup, :season_type, :winner_name,
+			:winner_id, :winner_score, :loser_name, :loser_id, :loser_score,
+			:home_team_id, :away_team_id
+		)
+	`
+	for _, g := range games {
+		_, err := tx.NamedExec(query, g)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
