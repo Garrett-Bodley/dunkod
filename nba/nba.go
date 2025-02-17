@@ -1,7 +1,6 @@
 package nba
 
 import (
-	"dunkod/config"
 	"dunkod/utils"
 
 	"encoding/json"
@@ -10,7 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"reflect"
+	// "reflect"
 	"slices"
 )
 
@@ -190,7 +189,7 @@ func (p CommonAllPlayer) ToJSON() CommonAllPlayerJSON {
 }
 
 func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
-	if IsInvalidSeason(season) {
+	if utils.IsInvalidSeason(season) {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided: %s", season))
 	}
 
@@ -380,7 +379,7 @@ func (g *LeagueGameLogGame) LogNilFields() {
 }
 
 func LeagueGameLog(season string, seasonType string) ([]LeagueGameLogGame, error) {
-	if IsInvalidSeason(season) {
+	if utils.IsInvalidSeason(season) {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided: %s", season))
 	}
 
@@ -511,20 +510,11 @@ func DedupeLeagueGameLogGames(games []LeagueGameLogGame) ([]LeagueGameLogGame, e
 	return res, nil
 }
 
-func IsInvalidSeason(season string) bool {
-	for _, s := range config.ValidSeasons {
-		if season == s {
-			return false
-		}
-	}
-	return true
-}
-
 func maybe[T any](x any) *T {
 	if x, ok := x.(T); ok {
 		return &x
 	}
-	log.Printf("Type assertion failed: expected type %T, got type %v\n", *new(T), reflect.TypeOf(x))
+	// log.Printf("Type assertion failed: expected type %T, got type %v\n", *new(T), reflect.TypeOf(x))
 	return nil
 }
 
