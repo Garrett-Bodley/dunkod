@@ -3,6 +3,8 @@ package db
 import (
 	"dunkod/config"
 	"dunkod/utils"
+	"strings"
+	"time"
 
 	"fmt"
 	"log"
@@ -15,7 +17,7 @@ import (
 )
 
 type DatabaseGame struct {
-	Id          string `db:"id"`
+	ID          string `db:"id"`
 	Season      string `db:"season"`
 	GameDate    string `db:"game_date"`
 	Matchup     string `db:"matchup"`
@@ -30,6 +32,48 @@ type DatabaseGame struct {
 	AwayTeamId  int    `db:"away_team_id"`
 }
 
+func (g DatabaseGame) ToString() string {
+	dateTime, err := time.Parse("2006-01-02", g.GameDate)
+	if err != nil {
+		panic(err)
+	}
+	dateString := dateTime.Format("1/2/06")
+
+	splitWinner := strings.Split(g.WinnerName, " ")
+	winnerString := splitWinner[len(splitWinner) - 1]
+	if winnerString == "Timberwolves" {
+		winnerString = "Wolves"
+	}else if winnerString == "Mavericks" {
+		winnerString = "Mavs"
+	}
+
+	splitLoser := strings.Split(g.LoserName, " ")
+	loserString := splitLoser[len(splitLoser) - 1]
+	if loserString == "Timberwolves" {
+		loserString = "Wolves"
+	}else if loserString == "Mavericks" {
+		loserString = "Mavs"
+	}
+
+	if g.WinnerID == g.HomeTeamId {
+		return fmt.Sprintf("%s (%d) vs %s (%d) %s",
+			winnerString,
+			g.WinnerScore,
+			loserString,
+			g.LoserScore,
+			dateString,
+		)
+	} else {
+		return fmt.Sprintf("%s (%d) @ %s (%d) %s",
+			winnerString,
+			g.WinnerScore,
+			loserString,
+			g.LoserScore,
+			dateString,
+		)
+	}
+}
+
 func SetupDatabase() error {
 	_, err := os.Stat(config.DatabaseFile)
 	if os.IsNotExist(err) {
@@ -40,7 +84,7 @@ func SetupDatabase() error {
 		}
 		file.Close()
 	} else if err != nil {
-		return err
+		return utils.ErrorWithTrace(err)
 	}
 	return nil
 }
@@ -95,13 +139,13 @@ func ValidateMigrations() error {
 func InsertGames(games []DatabaseGame) error {
 	db, err := sqlx.Open("sqlite3", config.DatabaseFile)
 	if err != nil {
-		return err
+		return utils.ErrorWithTrace(err)
 	}
 	defer db.Close()
 
 	tx, err := db.Beginx()
 	if err != nil {
-		return err
+		return utils.ErrorWithTrace(err)
 	}
 	defer tx.Rollback()
 
@@ -119,10 +163,38 @@ func InsertGames(games []DatabaseGame) error {
 	for _, g := range games {
 		_, err := tx.NamedExec(query, g)
 		if err != nil {
-			return err
+			return utils.ErrorWithTrace(err)
 		}
 	}
 
 	return tx.Commit()
 }
 
+func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
+	if utils.IsInvalidSeason(season) {
+		return nil, fmt.Errorf("invalid season provided: %s", season)
+	}
+
+	db, err := sqlx.Open("sqlite3", config.DatabaseFile)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	defer db.Close()
+
+	tx, err := db.Beginx()
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	query := `
+		SELECT * FROM games WHERE season = ? ORDER BY game_date DESC;
+	`
+
+	games := []DatabaseGame{}
+	err = tx.Select(&games, query, season)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	return games, nil
+}
