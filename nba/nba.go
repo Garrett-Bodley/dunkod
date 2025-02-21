@@ -9,8 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
-	// "reflect"
 	"slices"
+	"strings"
 )
 
 func initNBAReq(url string) *http.Request {
@@ -195,7 +195,7 @@ func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
 
 	url := fmt.Sprintf("https://stats.nba.com/stats/commonallplayers?LeagueID=00&Season=%s&IsOnlyCurrentSeason=1", season)
 	req := initNBAReq(url)
-	body, err := curl(req)
+	body, err := utils.Curl(req)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -510,29 +510,276 @@ func DedupeLeagueGameLogGames(games []LeagueGameLogGame) ([]LeagueGameLogGame, e
 	return res, nil
 }
 
+type VideoDetailAsset struct {
+	GameID      *string
+	EventID     *float64
+	Year        *float64
+	Month       *string
+	Day         *string
+	Description *string
+	Uuid        *string
+	LargeUrl    *string
+	MedUrl      *string
+	SmallUrl    *string
+}
+
+type VideoDetailsAssetResp struct {
+	ResultSets struct {
+		Meta struct {
+			VideoUrls []VideoDetailsAssetURLEntry `json:"videoUrls"`
+		} `json:"Meta"`
+		Playlist []VideoDetailsAssetPlaylistEntry `json:"playlist"`
+	} `json:"resultSets"`
+}
+
+type VideoDetailsAssetURLEntry struct {
+	Uuid           *string  `json:"uuid"`
+	SmallDur       *float64 `json:"sdur"`
+	SmallUrl       *string  `json:"surl"`
+	SmallThumbnail *string  `json:"sth"`
+	MedDur         *float64 `json:"mdur"`
+	MedUrl         *string  `json:"murl"`
+	MedThumbnail   *string  `json:"mth"`
+	LargeDur       *float64 `json:"ldur"`
+	LargeUrl       *string  `json:"lurl"`
+	LargeThumbnail *string  `json:"lth"`
+	Vtt            *string  `json:"vtt"`
+	Scc            *string  `json:"scc"`
+	Srt            *string  `json:"srt"`
+}
+
+type VideoDetailsAssetPlaylistEntry struct {
+	GameID               *string  `json:"gi"`
+	EventID              *float64 `json:"ei"`
+	Year                 *float64 `json:"y"`
+	Month                *string  `json:"m"`
+	Day                  *string  `json:"d"`
+	GameCode             *string  `json:"gc"`
+	Period               *float64 `json:"p"`
+	Description          *string  `json:"dsc"`
+	HomeAbbreviation     *string  `json:"ha"`
+	HomeID               *float64 `json:"hid"`
+	VisitingAbbreviation *string  `json:"va"`
+	VisitingID           *float64 `json:"vid"`
+	HomePointsBefore     *float64 `json:"hpb"`
+	HomePointsAfter      *float64 `json:"hpa"`
+	VisitingPointsBefore *float64 `json:"vpb"`
+	VisitingPointsAfter  *float64 `json:"vpa"`
+	IdkWhatThisDoes      *float64 `json:"pta"`
+}
+
+type VideoDetailsAssetContextMeasure string
+
+var VideoDetailsAssetContextMeasures = struct {
+	FGM                VideoDetailsAssetContextMeasure
+	FGA                VideoDetailsAssetContextMeasure
+	FG_PCT             VideoDetailsAssetContextMeasure
+	FG3M               VideoDetailsAssetContextMeasure
+	FG3A               VideoDetailsAssetContextMeasure
+	FG3_PCT            VideoDetailsAssetContextMeasure
+	FTM                VideoDetailsAssetContextMeasure
+	FTA                VideoDetailsAssetContextMeasure
+	OREB               VideoDetailsAssetContextMeasure
+	DREB               VideoDetailsAssetContextMeasure
+	AST                VideoDetailsAssetContextMeasure
+	FGM_AST            VideoDetailsAssetContextMeasure
+	FG3_AST            VideoDetailsAssetContextMeasure
+	STL                VideoDetailsAssetContextMeasure
+	BLK                VideoDetailsAssetContextMeasure
+	BLKA               VideoDetailsAssetContextMeasure
+	TOV                VideoDetailsAssetContextMeasure
+	PF                 VideoDetailsAssetContextMeasure
+	PFD                VideoDetailsAssetContextMeasure
+	POSS_END_FT        VideoDetailsAssetContextMeasure
+	PTS_PAINT          VideoDetailsAssetContextMeasure
+	PTS_FB             VideoDetailsAssetContextMeasure
+	PTS_OFF_TOV        VideoDetailsAssetContextMeasure
+	PTS_2ND_CHANCE     VideoDetailsAssetContextMeasure
+	REB                VideoDetailsAssetContextMeasure
+	TM_FGM             VideoDetailsAssetContextMeasure
+	TM_FGA             VideoDetailsAssetContextMeasure
+	TM_FG3M            VideoDetailsAssetContextMeasure
+	TM_FG3A            VideoDetailsAssetContextMeasure
+	TM_FTM             VideoDetailsAssetContextMeasure
+	TM_FTA             VideoDetailsAssetContextMeasure
+	TM_OREB            VideoDetailsAssetContextMeasure
+	TM_DREB            VideoDetailsAssetContextMeasure
+	TM_REB             VideoDetailsAssetContextMeasure
+	TM_TEAM_REB        VideoDetailsAssetContextMeasure
+	TM_AST             VideoDetailsAssetContextMeasure
+	TM_STL             VideoDetailsAssetContextMeasure
+	TM_BLK             VideoDetailsAssetContextMeasure
+	TM_BLKA            VideoDetailsAssetContextMeasure
+	TM_TOV             VideoDetailsAssetContextMeasure
+	TM_TEAM_TOV        VideoDetailsAssetContextMeasure
+	TM_PF              VideoDetailsAssetContextMeasure
+	TM_PFD             VideoDetailsAssetContextMeasure
+	TM_PTS             VideoDetailsAssetContextMeasure
+	TM_PTS_PAINT       VideoDetailsAssetContextMeasure
+	TM_PTS_FB          VideoDetailsAssetContextMeasure
+	TM_PTS_OFF_TOV     VideoDetailsAssetContextMeasure
+	TM_PTS_2ND_CHANCE  VideoDetailsAssetContextMeasure
+	TM_FGM_AST         VideoDetailsAssetContextMeasure
+	TM_FG3_AST         VideoDetailsAssetContextMeasure
+	TM_POSS_END_FT     VideoDetailsAssetContextMeasure
+	OPP_FGM            VideoDetailsAssetContextMeasure
+	OPP_FGA            VideoDetailsAssetContextMeasure
+	OPP_FG3M           VideoDetailsAssetContextMeasure
+	OPP_FG3A           VideoDetailsAssetContextMeasure
+	OPP_FTM            VideoDetailsAssetContextMeasure
+	OPP_FTA            VideoDetailsAssetContextMeasure
+	OPP_OREB           VideoDetailsAssetContextMeasure
+	OPP_DREB           VideoDetailsAssetContextMeasure
+	OPP_REB            VideoDetailsAssetContextMeasure
+	OPP_TEAM_REB       VideoDetailsAssetContextMeasure
+	OPP_AST            VideoDetailsAssetContextMeasure
+	OPP_STL            VideoDetailsAssetContextMeasure
+	OPP_BLK            VideoDetailsAssetContextMeasure
+	OPP_BLKA           VideoDetailsAssetContextMeasure
+	OPP_TOV            VideoDetailsAssetContextMeasure
+	OPP_TEAM_TOV       VideoDetailsAssetContextMeasure
+	OPP_PF             VideoDetailsAssetContextMeasure
+	OPP_PFD            VideoDetailsAssetContextMeasure
+	OPP_PTS            VideoDetailsAssetContextMeasure
+	OPP_PTS_PAINT      VideoDetailsAssetContextMeasure
+	OPP_PTS_FB         VideoDetailsAssetContextMeasure
+	OPP_PTS_OFF_TOV    VideoDetailsAssetContextMeasure
+	OPP_PTS_2ND_CHANCE VideoDetailsAssetContextMeasure
+	OPP_FGM_AST        VideoDetailsAssetContextMeasure
+	OPP_FG3_AST        VideoDetailsAssetContextMeasure
+	OPP_POSS_END_FT    VideoDetailsAssetContextMeasure
+	PTS                VideoDetailsAssetContextMeasure
+}{
+	FGM:                "FGM",
+	FGA:                "FGA",
+	FG_PCT:             "FG_PCT",
+	FG3M:               "FG3M",
+	FG3A:               "FG3A",
+	FG3_PCT:            "FG3_PCT",
+	FTM:                "FTM",
+	FTA:                "FTA",
+	OREB:               "OREB",
+	DREB:               "DREB",
+	AST:                "AST",
+	FGM_AST:            "FGM_AST",
+	FG3_AST:            "FG3_AST",
+	STL:                "STL",
+	BLK:                "BLK",
+	BLKA:               "BLKA",
+	TOV:                "TOV",
+	PF:                 "PF",
+	PFD:                "PFD",
+	POSS_END_FT:        "POSS_END_FT",
+	PTS_PAINT:          "PTS_PAINT",
+	PTS_FB:             "PTS_FB",
+	PTS_OFF_TOV:        "PTS_OFF_TOV",
+	PTS_2ND_CHANCE:     "PTS_2ND_CHANCE",
+	REB:                "REB",
+	TM_FGM:             "TM_FGM",
+	TM_FGA:             "TM_FGA",
+	TM_FG3M:            "TM_FG3M",
+	TM_FG3A:            "TM_FG3A",
+	TM_FTM:             "TM_FTM",
+	TM_FTA:             "TM_FTA",
+	TM_OREB:            "TM_OREB",
+	TM_DREB:            "TM_DREB",
+	TM_REB:             "TM_REB",
+	TM_TEAM_REB:        "TM_TEAM_REB",
+	TM_AST:             "TM_AST",
+	TM_STL:             "TM_STL",
+	TM_BLK:             "TM_BLK",
+	TM_BLKA:            "TM_BLKA",
+	TM_TOV:             "TM_TOV",
+	TM_TEAM_TOV:        "TM_TEAM_TOV",
+	TM_PF:              "TM_PF",
+	TM_PFD:             "TM_PFD",
+	TM_PTS:             "TM_PTS",
+	TM_PTS_PAINT:       "TM_PTS_PAINT",
+	TM_PTS_FB:          "TM_PTS_FB",
+	TM_PTS_OFF_TOV:     "TM_PTS_OFF_TOV",
+	TM_PTS_2ND_CHANCE:  "TM_PTS_2ND_CHANCE",
+	TM_FGM_AST:         "TM_FGM_AST",
+	TM_FG3_AST:         "TM_FG3_AST",
+	TM_POSS_END_FT:     "TM_POSS_END_FT",
+	OPP_FGM:            "OPP_FGM",
+	OPP_FGA:            "OPP_FGA",
+	OPP_FG3M:           "OPP_FG3M",
+	OPP_FG3A:           "OPP_FG3A",
+	OPP_FTM:            "OPP_FTM",
+	OPP_FTA:            "OPP_FTA",
+	OPP_OREB:           "OPP_OREB",
+	OPP_DREB:           "OPP_DREB",
+	OPP_REB:            "OPP_REB",
+	OPP_TEAM_REB:       "OPP_TEAM_REB",
+	OPP_AST:            "OPP_AST",
+	OPP_STL:            "OPP_STL",
+	OPP_BLK:            "OPP_BLK",
+	OPP_BLKA:           "OPP_BLKA",
+	OPP_TOV:            "OPP_TOV",
+	OPP_TEAM_TOV:       "OPP_TEAM_TOV",
+	OPP_PF:             "OPP_PF",
+	OPP_PFD:            "OPP_PFD",
+	OPP_PTS:            "OPP_PTS",
+	OPP_PTS_PAINT:      "OPP_PTS_PAINT",
+	OPP_PTS_FB:         "OPP_PTS_FB",
+	OPP_PTS_OFF_TOV:    "OPP_PTS_OFF_TOV",
+	OPP_PTS_2ND_CHANCE: "OPP_PTS_2ND_CHANCE",
+	OPP_FGM_AST:        "OPP_FGM_AST",
+	OPP_FG3_AST:        "OPP_FG3_AST",
+	OPP_POSS_END_FT:    "OPP_POSS_END_FT",
+	PTS:                "PTS",
+}
+
+func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
+	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&ContextMeasure=%s&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameID=%s&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PlayerID=%s&PointDiff=&Position=&RangeType=&RookieYear=&Season=2024-25&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=", contextMeasure, gameID, playerID)
+	req := initNBAReq(url)
+	body, err := utils.Curl(req)
+
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	unmarshalledBody := VideoDetailsAssetResp{}
+	err = json.Unmarshal(body, &unmarshalledBody)
+	if err != nil && strings.Contains(err.Error(), "invalid character '<'") {
+		return []VideoDetailAsset{}, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json"))
+	} else if err != nil {
+		return []VideoDetailAsset{}, err
+	}
+
+	Playlist := unmarshalledBody.ResultSets.Playlist
+	VideoUrls := unmarshalledBody.ResultSets.Meta.VideoUrls
+
+	if len(Playlist) != len(VideoUrls) {
+		return []VideoDetailAsset{}, utils.ErrorWithTrace(fmt.Errorf("playlist array and urls array lengths do not match (╯°□°)╯︵ ɹoɹɹƎ"))
+	}
+
+	res := make([]VideoDetailAsset, 0, len(Playlist))
+	for i := range Playlist {
+		entry := VideoDetailAsset{
+			GameID:      Playlist[i].GameID,
+			EventID:     Playlist[i].EventID,
+			Year:        Playlist[i].Year,
+			Month:       Playlist[i].Month,
+			Day:         Playlist[i].Day,
+			Description: Playlist[i].Description,
+			Uuid:        VideoUrls[i].Uuid,
+			SmallUrl:    VideoUrls[i].SmallUrl,
+			MedUrl:      VideoUrls[i].MedUrl,
+			LargeUrl:    VideoUrls[i].LargeUrl,
+		}
+		if entry.LargeUrl == nil && entry.MedUrl == nil && entry.SmallUrl == nil {
+			continue
+		}
+		res = append(res, entry)
+	}
+	return res, nil
+}
+
 func maybe[T any](x any) *T {
 	if x, ok := x.(T); ok {
 		return &x
 	}
 	// log.Printf("Type assertion failed: expected type %T, got type %v\n", *new(T), reflect.TypeOf(x))
 	return nil
-}
-
-var sem = make(chan int, 50)
-
-func curl(req *http.Request) ([]byte, error) {
-	sem <- 1
-	defer func() { <-sem }()
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, utils.ErrorWithTrace(err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, utils.ErrorWithTrace(err)
-	}
-	return body, nil
 }
