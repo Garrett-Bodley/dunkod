@@ -18,7 +18,7 @@
       <form action="/" method="post" class="bg-white p-6 rounded-lg shadow-md pb-12 mb-20 min-w-screen sm:min-w-lg">
         {{ template "season" .ValidSeasons }}
         {{ template "games-and-players" . }}
-        <button class="w-full mt-4 bg-black text-white py-2 rounded-lg hover:bg-gray-800">👉👈</button>
+        <button hx-post="/" hx-swap="none" class="w-full mt-4 bg-black text-white py-2 rounded-lg hover:bg-gray-800">👉👈</button>
       </form>
     </div>
 
