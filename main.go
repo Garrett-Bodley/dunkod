@@ -6,10 +6,19 @@ import (
 	"dunkod/nba"
 	"dunkod/utils"
 
+	"crypto/md5"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
+	"math"
+	"math/rand"
+	"os"
+	"os/exec"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -98,15 +107,15 @@ func newPlayerData(selected, notSelected []nba.CommonAllPlayer) *PlayerData {
 }
 
 type VideoRequest struct {
-	Season string
-	GameIDs []string
+	Season    string
+	GameIDs   []string
 	PlayerIDs []string
 }
 
 func newVideoRequest(season string, gameIDs []string, playerIDs []string) *VideoRequest {
 	return &VideoRequest{
-		Season: season,
-		GameIDs: gameIDs,
+		Season:    season,
+		GameIDs:   gameIDs,
 		PlayerIDs: playerIDs,
 	}
 }
@@ -257,8 +266,20 @@ func main() {
 		gameIDs := req.Form["game"]
 		playerIDs := req.Form["player"]
 
-		vidReq := newVideoRequest(season, gameIDs, playerIDs)
-		fmt.Println(*vidReq)
+		// vidReq := newVideoRequest(season, gameIDs, playerIDs)
+		assets, err := compileAssetURLs(season, gameIDs, playerIDs)
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		}
+		if err := sortAssetURLs(&assets); err != nil {
+			return utils.ErrorWithTrace(err)
+		}
+
+		vid, err := downloadAndConcat(assets)
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		}
+		fmt.Println(vid)
 		return c.NoContent(200)
 	})
 
@@ -390,4 +411,178 @@ func filterPlayersByQuery(players []nba.CommonAllPlayer, query string) []nba.Com
 		}
 	}
 	return filtered
+}
+
+var contextMeasures = []nba.VideoDetailsAssetContextMeasure{
+	nba.VideoDetailsAssetContextMeasures.FGA,
+	nba.VideoDetailsAssetContextMeasures.REB,
+	nba.VideoDetailsAssetContextMeasures.AST,
+	nba.VideoDetailsAssetContextMeasures.STL,
+	nba.VideoDetailsAssetContextMeasures.TOV,
+	nba.VideoDetailsAssetContextMeasures.BLK,
+}
+
+func compileAssetURLs(season string, gameIDs []string, playerIDs []string) ([]string, error) {
+	if utils.IsInvalidSeason(season) {
+		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided :%s", season))
+	}
+	assetChan := make(chan string, 1024)
+	errChan := make(chan error, 1024)
+	wg := sync.WaitGroup{}
+
+	for _, gid := range gameIDs {
+		for _, pid := range playerIDs {
+			for _, m := range contextMeasures {
+				time.Sleep(200 * time.Millisecond)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					assets, err := nba.VideoDetailsAsset(gid, pid, m)
+					if err != nil {
+						errChan <- utils.ErrorWithTrace(err)
+					}
+					for _, a := range assets {
+						if a.LargeUrl != nil {
+							assetChan <- *a.LargeUrl
+						} else if a.MedUrl != nil {
+							assetChan <- *a.MedUrl
+						} else if a.SmallUrl != nil {
+							assetChan <- *a.SmallUrl
+						}
+					}
+				}()
+			}
+		}
+	}
+
+	wg.Wait()
+	close(errChan)
+	close(assetChan)
+
+	if len(errChan) > 0 {
+		errs := []error{}
+		for e := range errChan {
+			errs = append(errs, e)
+		}
+		return nil, errors.Join(errs...)
+	}
+
+	urls := make([]string, 0, len(assetChan))
+	for a := range assetChan {
+		urls = append(urls, a)
+	}
+	return urls, nil
+}
+
+func downloadAndConcat(urls []string) (string, error) {
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "")
+	if err != nil {
+		return "", utils.ErrorWithTrace(err)
+	}
+
+	wg := sync.WaitGroup{}
+	errChan := make(chan error, 1024)
+
+	for i, u := range urls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fileName := fmt.Sprintf("%s/%04d.mp4", tmpDir, i)
+			if err := utils.CurlToFile(u, fileName); err != nil {
+				errChan <- utils.ErrorWithTrace(err)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	if len(errChan) > 0 {
+		errs := make([]error, 0, len(errChan))
+		for err := range errChan {
+			errs = append(errs, err)
+		}
+		_ = os.RemoveAll(tmpDir)
+		return "", utils.ErrorWithTrace(errors.Join(errs...))
+	}
+
+	vid, err := ffmpegConcat(tmpDir)
+	if err != nil {
+		return "", utils.ErrorWithTrace(err)
+	}
+
+	return vid, nil
+}
+
+func sortAssetURLs(assets *[]string) error {
+	re := regexp.MustCompile(`(?:https:\/\/videos.nba.com\/nba\/pbp\/media\/\d+\/\d+\/\d+\/)(\d+)\/(\d+)`)
+	errs := []error{}
+	slices.SortStableFunc(*assets, func(a, b string) int {
+		matchesA := re.FindStringSubmatch(a)
+		matchesB := re.FindStringSubmatch(b)
+
+		sortNumA := matchesA[1] + fmt.Sprintf("%03s", matchesA[2])
+		sortNumB := matchesB[1] + fmt.Sprintf("%03s", matchesB[2])
+
+		numA, err := strconv.Atoi(sortNumA)
+		if err != nil {
+			errs = append(errs, err)
+			return 0
+		}
+		numB, err := strconv.Atoi(sortNumB)
+		if err != nil {
+			errs = append(errs, err)
+			return 0
+		}
+
+		return numA - numB
+	})
+	if len(errs) > 0 {
+		errors.Join(errs...)
+	}
+	return nil
+}
+
+// ffmpeg is written in c and assembly language
+func ffmpegConcat(dir string) (string, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return "", utils.ErrorWithTrace(err)
+	}
+
+	listName := fmt.Sprintf("%s/files.txt", dir)
+	list, err := os.Create(listName)
+	if err != nil {
+		return "", utils.ErrorWithTrace(err)
+	}
+	defer list.Close()
+
+	for _, f := range files {
+		_, err := list.Write([]byte(fmt.Sprintf("file '%s'\n", f.Name())))
+		if err != nil {
+			return "", utils.ErrorWithTrace(err)
+		}
+	}
+
+	timeString := fmt.Sprintf("%d%d", time.Now().Unix(), rand.Intn(math.MaxInt64))
+	sum := md5.Sum([]byte(timeString))
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", utils.ErrorWithTrace(err)
+	}
+	outputFileName := home + "/Downloads/" + fmt.Sprintf("%x", sum) + ".mp4"
+
+	fmt.Println(dir, listName)
+
+	args := []string{"-hide_banner", "-v", "fatal", "-f", "concat", "-safe", "0", "-vsync", "0", "-i", fmt.Sprintf("%s/files.txt", dir), "-c", "copy", outputFileName}
+	cmd := exec.Command("ffmpeg", args...)
+	cmd.Stdin, cmd.Stderr, cmd.Stdout = os.Stdin, os.Stderr, os.Stdout
+
+	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(dir)
+		_ = os.Remove(outputFileName)
+		return "", utils.ErrorWithTrace(err)
+	}
+
+	return outputFileName, nil
 }
