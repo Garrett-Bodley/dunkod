@@ -1,5 +1,7 @@
 database.db
 dunkod
+secret.json
+token.json
 
 tmp
 .air.toml

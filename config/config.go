@@ -25,9 +25,9 @@ var ValidSeasons = []string{
 
 var SeasonTypes = []string{
 	"Regular+Season",
-	"Pre+Season",
+	// "Pre+Season",
 	"Playoffs",
-	"All+Star",
+	// "All+Star",
 }
 
 func LoadConfig() error {

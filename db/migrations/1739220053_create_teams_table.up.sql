@@ -9,11 +9,23 @@ CREATE TABLE
     code TEXT,
     slug TEXT,
     min_year INT,
-    max_year INT
+    max_year INT,
+    created_at TIMESTAMP DEFAULT (datetime ('now', 'localtime')),
+    updated_at TIMESTAMP DEFAULT (datetime ('now', 'localtime'))
   );
 
-INSERT INTO
-  teams (id, name)
+CREATE TRIGGER IF NOT EXISTS update_teams_modtime AFTER
+UPDATE ON teams FOR EACH ROW BEGIN
+UPDATE teams
+SET
+  updated_at = datetime ('now', 'localtime')
+WHERE
+  id = NEW.id;
+
+END;
+
+INSERT
+OR IGNORE INTO teams (id, name)
 VALUES
   (1610612737, 'Atlanta Hawks'),
   (1610612738, 'Boston Celtics'),

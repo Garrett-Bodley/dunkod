@@ -1,8 +1,7 @@
 package nba
 
 import (
-	"dunkod/utils"
-
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,10 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
+	"time"
+
+	"dunkod/utils"
 )
 
 func initNBAReq(url string) *http.Request {
@@ -23,6 +26,9 @@ func initNBAReq(url string) *http.Request {
 	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	return req
 }
+
+var playerCacheMu = sync.Mutex{}
+var playerCache = map[string][]CommonAllPlayer{}
 
 type CommonAllPlayersResp struct {
 	ResultSets []struct {
@@ -194,8 +200,9 @@ func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
 	}
 
 	url := fmt.Sprintf("https://stats.nba.com/stats/commonallplayers?LeagueID=00&Season=%s&IsOnlyCurrentSeason=1", season)
-	req := initNBAReq(url)
-	body, err := utils.Curl(req)
+	body, err := curl(url)
+	// req := initNBAReq(url)
+	// body, err := utils.Curl(req)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -384,20 +391,23 @@ func LeagueGameLog(season string, seasonType string) ([]LeagueGameLogGame, error
 	}
 
 	url := fmt.Sprintf("https://stats.nba.com/stats/leaguegamelog?Counter=0&Direction=DESC&LeagueID=00&PlayerOrTeam=T&Season=%s&SeasonType=%s&Sorter=DATE", season, seasonType)
-
-	req := initNBAReq(url)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	body, err := curl(url)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	defer resp.Body.Close()
+	// req := initNBAReq(url)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, utils.ErrorWithTrace(err)
-	}
+	// client := &http.Client{}
+	// resp, err := client.Do(req)
+	// if err != nil {
+	// 	return nil, utils.ErrorWithTrace(err)
+	// }
+	// defer resp.Body.Close()
+
+	// body, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return nil, utils.ErrorWithTrace(err)
+	// }
 
 	unmarshalledBody := LeagueGameLogResp{}
 	err = json.Unmarshal(body, &unmarshalledBody)
@@ -732,9 +742,9 @@ var VideoDetailsAssetContextMeasures = struct {
 
 func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
 	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&ContextMeasure=%s&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameID=%s&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PlayerID=%s&PointDiff=&Position=&RangeType=&RookieYear=&Season=2024-25&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=", contextMeasure, gameID, playerID)
-	req := initNBAReq(url)
-	body, err := utils.Curl(req)
-
+	body, err := curl(url)
+	// req := initNBAReq(url)
+	// body, err := utils.Curl(req)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -742,16 +752,16 @@ func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAsset
 	unmarshalledBody := VideoDetailsAssetResp{}
 	err = json.Unmarshal(body, &unmarshalledBody)
 	if err != nil && strings.Contains(err.Error(), "invalid character '<'") {
-		return []VideoDetailAsset{}, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json"))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json"))
 	} else if err != nil {
-		return []VideoDetailAsset{}, err
+		return nil, utils.ErrorWithTrace(err)
 	}
 
 	Playlist := unmarshalledBody.ResultSets.Playlist
 	VideoUrls := unmarshalledBody.ResultSets.Meta.VideoUrls
 
 	if len(Playlist) != len(VideoUrls) {
-		return []VideoDetailAsset{}, utils.ErrorWithTrace(fmt.Errorf("playlist array and urls array lengths do not match (╯°□°)╯︵ ɹoɹɹƎ"))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("playlist array and urls array lengths do not match (╯°□°)╯︵ ɹoɹɹƎ"))
 	}
 
 	res := make([]VideoDetailAsset, 0, len(Playlist))
@@ -774,6 +784,75 @@ func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAsset
 		res = append(res, entry)
 	}
 	return res, nil
+}
+
+func GetPlayersBySeason(season string) ([]CommonAllPlayer, error) {
+	playerCacheMu.Lock()
+	defer playerCacheMu.Unlock()
+	if cached, exists := playerCache[season]; exists {
+		return cached, nil
+	}
+
+	players, err := CommonAllPlayersBySeason(season)
+	if err != nil {
+		return nil, err
+	}
+	playerCache[season] = players
+	return players, nil
+}
+
+func GetPlayersByIds(season string, playerIDs []string) ([]CommonAllPlayer, error) {
+	pidMap := map[string]bool{}
+	for _, pid := range playerIDs {
+		pidMap[pid] = true
+	}
+
+	seasonPlayers, err := GetPlayersBySeason(season)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	players := make([]CommonAllPlayer, 0, len(playerIDs))
+	for _, p := range seasonPlayers {
+		if pidMap[fmt.Sprintf("%d", int(*p.PersonID))] {
+			players = append(players, p)
+		}
+	}
+	return players, nil
+}
+
+func PlayerCacheJanitor() {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		playerCacheMu.Lock()
+		playerCache = make(map[string][]CommonAllPlayer)
+		playerCacheMu.Unlock()
+	}
+}
+
+func curl(url string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15 * time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Referer", "https://www.nba.com/")
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	return body, nil
 }
 
 func maybe[T any](x any) *T {
