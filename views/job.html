@@ -1,0 +1,59 @@
+{{ block "job" . }}
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <script
+        src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"
+      ></script>
+      <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    </head>
+    <body class="flex items-center justify-center min-h-screen bg-gray-100 outline">
+      <div class="flex flex-col items-center lg:p-7 rounded-2xl">
+        <a href="/">
+          <h1 class="text-3xl font-bold mb-4">Dunks On Demand 🏀</h1>
+        </a>
+        <div class="bg-white p-6 rounded-lg shadow-md pb-12 mb-20 min-w-screen sm:min-w-lg">
+          {{ if .Job }}
+            <div class="block text-gray-700 text-sm font-bold mb-2">Status: </div>
+            <div id="state" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
+              {{ .Job.State }}
+            </div>
+            {{ if eq .Job.State "ERROR" }}
+              <div id="error-details" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
+                {{ .Job.ErrorDetails }}
+              </div>
+            {{ end }}
+            <div class="block text-gray-700 text-sm font-bold mb-2">Players: </div>
+            <div id="players" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
+              {{ range .Players }}
+                <div>{{ . }}</div>
+              {{ end }}
+            </div>
+            <div class="block text-gray-700 text-sm font-bold mb-2"> Games: </div>
+            <div id="games" class="bg-gray-100 rounded-lg px-3 py-2 {{ if .Video }} mb-2 {{ end }}">
+              {{ range .Games }}
+                <div>{{ . }}</div>
+              {{ end }}
+            </div>
+            {{ if .Video }}
+              <div class="block text-gray-700 text-sm font-bold mb-2">Video: </div>
+              <div id="video" class="flex flex-direction-row justify-center">
+                <iframe class="w-100 h-56" src="{{ .Video.YoutubeUrl }}">
+
+                </iframe>
+              </div>
+            {{ end }}
+          {{ end }}
+          <div id="error" class="text-center text-red-600">
+            {{ .Error }}
+          </div>
+        </div>
+      </div>
+
+    </body>
+  </html>
+{{ end }}

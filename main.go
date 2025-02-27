@@ -1,31 +1,31 @@
 package main
 
 import (
-	"dunkod/config"
-	"dunkod/db"
-	"dunkod/nba"
-	"dunkod/utils"
-
-	"crypto/md5"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
-	"math"
-	"math/rand"
 	"os"
-	"os/exec"
-	"regexp"
-	"slices"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"dunkod/config"
+	"dunkod/db"
+	"dunkod/jobs"
+	"dunkod/nba"
+	"dunkod/utils"
+	"dunkod/youtube"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
+
+var sigChan = make(chan os.Signal, 1)
 
 func init() {
 	if err := config.LoadConfig(); err != nil {
@@ -40,7 +40,21 @@ func init() {
 	if err := db.ValidateMigrations(); err != nil {
 		panic(err)
 	}
+	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
+	go cleanup()
+	go nba.PlayerCacheJanitor()
+	go youtube.ServiceJanitor()
+	go scrapingDaemon()
 	fmt.Println("The New York Knickerbockers are named after pants")
+}
+
+func cleanup() {
+	<-sigChan
+	fmt.Println("\nclosing database...")
+	if err := db.Close(); err != nil {
+		panic(err)
+	}
+	os.Exit(0)
 }
 
 type Templates struct {
@@ -71,6 +85,7 @@ type State struct {
 	ValidSeasons []string
 	GameData     *GameData
 	PlayerData   *PlayerData
+	Error        string
 }
 
 func newState(season string, validSeasons []string, gameData *GameData, playerData *PlayerData) *State {
@@ -106,25 +121,28 @@ func newPlayerData(selected, notSelected []nba.CommonAllPlayer) *PlayerData {
 	}
 }
 
-type VideoRequest struct {
-	Season    string
-	GameIDs   []string
-	PlayerIDs []string
+type JobState struct {
+	Players []string
+	Games   []string
+	Job     *db.Job
+	Video   *db.Video
+	Error   string
 }
 
-func newVideoRequest(season string, gameIDs []string, playerIDs []string) *VideoRequest {
-	return &VideoRequest{
-		Season:    season,
-		GameIDs:   gameIDs,
-		PlayerIDs: playerIDs,
+func newJobState(job *db.Job) *JobState {
+	return &JobState{
+		Job:     job,
+		Players: []string{},
+		Games:   []string{},
+		Error:   "",
 	}
 }
 
-var playerCacheMu = sync.Mutex{}
-var playerCache = map[string][]nba.CommonAllPlayer{}
-
 func main() {
-	// go scrapingDaemon()
+	scheduler1 := jobs.NewScheduler(0, db.GetDb(), 4, time.Second*10)
+	scheduler2 := jobs.NewScheduler(0, db.GetDb(), 4, time.Second*10)
+	go scheduler1.Start()
+	go scheduler2.Start()
 
 	e := echo.New()
 	e.Use(middleware.Logger())
@@ -158,7 +176,7 @@ func main() {
 		}
 		gameData := newGameData([]db.DatabaseGame{}, allGames)
 
-		allPlayers, err := getPlayersBySeason(season)
+		allPlayers, err := nba.GetPlayersBySeason(season)
 		if err != nil {
 			return utils.ErrorWithTrace(err)
 		}
@@ -222,7 +240,7 @@ func main() {
 		season := req.FormValue("season")
 		checked := req.Form["player"]
 
-		seasonPlayers, err := getPlayersBySeason(season)
+		seasonPlayers, err := nba.GetPlayersBySeason(season)
 		if err != nil {
 			return utils.ErrorWithTrace(err)
 		}
@@ -266,51 +284,99 @@ func main() {
 		gameIDs := req.Form["game"]
 		playerIDs := req.Form["player"]
 
-		// vidReq := newVideoRequest(season, gameIDs, playerIDs)
-		assets, err := compileAssetURLs(season, gameIDs, playerIDs)
+		assets, err := getAssets(season, gameIDs, playerIDs)
 		if err != nil {
-			return utils.ErrorWithTrace(err)
+			log.Println(utils.ErrorWithTrace(err))
+			return c.Render(200, "error", "unable to process request (◞‸ ◟ ；)")
 		}
-		if err := sortAssetURLs(&assets); err != nil {
-			return utils.ErrorWithTrace(err)
+		if len(assets) == 0 {
+			return c.Render(200, "error", "no assets found (◞‸ ◟ ；)")
+		}
+		job := db.NewJob(playerIDs, gameIDs, season)
+		job, err = db.InsertJob(job)
+		if err != nil {
+			return c.Render(200, "error", err.Error())
 		}
 
-		vid, err := downloadAndConcat(assets)
-		if err != nil {
-			return utils.ErrorWithTrace(err)
-		}
-		fmt.Println(vid)
+		redirect := fmt.Sprintf("/%s", job.Slug)
+		c.Response().Header().Set("HX-Redirect", redirect)
 		return c.NoContent(200)
+	})
+
+	e.GET("/:slug", func(c echo.Context) error {
+		slug := c.Param("slug")
+		job, err := db.SelectJobBySlug(slug)
+		if err != nil {
+			jobState := newJobState(nil)
+			jobState.Error = err.Error()
+			return c.Render(200, "job", jobState)
+		}
+		jobState := newJobState(job)
+
+		games, err := db.SelectGamesById(strings.Split(job.Games, ","))
+		if err != nil {
+			jobState.Error = err.Error()
+			return c.Render(200, "job", jobState)
+		}
+		if len(games) == 0 {
+			jobState.Error = "did not find any games (◞‸ ◟ ；)"
+			return c.Render(200, "job", jobState)
+		}
+		matchups := []string{}
+		for _, g := range games {
+			matchups = append(matchups, fmt.Sprintf("%s %s", g.Matchup, g.GameDate))
+		}
+		jobState.Games = matchups
+
+		playerIds := []int{}
+		for _, idString := range strings.Split(job.Players, ",") {
+			id, err := strconv.Atoi(idString)
+			if err != nil {
+				jobState.Error = err.Error()
+				return c.Render(200, "job", jobState)
+			}
+			playerIds = append(playerIds, id)
+		}
+		players, err := nba.GetPlayersBySeason(job.Season)
+		if err != nil {
+			jobState.Error = err.Error()
+			return c.Render(200, "job", jobState)
+		}
+		playerNames := make([]string, 0, len(playerIds))
+		for _, p := range players {
+			if p.PersonID == nil {
+				continue
+			}
+			for _, id := range playerIds {
+				if id == int(*p.PersonID) {
+					playerNames = append(playerNames, *p.DisplayFirstLast)
+				}
+			}
+		}
+		jobState.Players = playerNames
+
+		if job.State == "FINISHED" {
+			video, err := db.SelectVideoByJobId(job.Id)
+			if err != nil {
+				jobState.Error = err.Error()
+				return c.Render(200, "job", jobState)
+			}
+			jobState.Video = video
+		}
+
+		return c.Render(200, "job", jobState)
 	})
 
 	e.Logger.Fatal(e.Start(":8080"))
 }
 
-func getPlayersBySeason(season string) ([]nba.CommonAllPlayer, error) {
-	playerCacheMu.Lock()
-	defer playerCacheMu.Unlock()
-	if cached, ok := playerCache[season]; ok {
-		return cached, nil
-	}
-
-	players, err := nba.CommonAllPlayersBySeason(season)
-	if err != nil {
-		return nil, err
-	}
-	playerCache[season] = players
-	return players, nil
-}
-
 func scrapingDaemon() {
 	log.Println("scraping all games")
 	scrapeAllGames()
-	last := time.Now()
-	for {
-		if now := time.Now(); now.Sub(last) >= 30*time.Minute {
-			last = now
-			log.Println("scraping all games")
-			scrapeAllGames()
-		}
+	ticker := time.NewTicker(30 * time.Minute)
+	for range ticker.C {
+		log.Println("scraping all games")
+		scrapeAllGames()
 	}
 }
 
@@ -376,7 +442,9 @@ func scrapeAllGames() error {
 				})
 			}
 		}
-		db.InsertGames(dbGames)
+		if err := db.InsertGames(dbGames); err != nil {
+			log.Println(err)
+		}
 	}
 	fmt.Println("done")
 	return nil
@@ -422,11 +490,11 @@ var contextMeasures = []nba.VideoDetailsAssetContextMeasure{
 	nba.VideoDetailsAssetContextMeasures.BLK,
 }
 
-func compileAssetURLs(season string, gameIDs []string, playerIDs []string) ([]string, error) {
+func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.VideoDetailAsset, error) {
 	if utils.IsInvalidSeason(season) {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided :%s", season))
 	}
-	assetChan := make(chan string, 1024)
+	assetChan := make(chan nba.VideoDetailAsset, 1024)
 	errChan := make(chan error, 1024)
 	wg := sync.WaitGroup{}
 
@@ -442,13 +510,7 @@ func compileAssetURLs(season string, gameIDs []string, playerIDs []string) ([]st
 						errChan <- utils.ErrorWithTrace(err)
 					}
 					for _, a := range assets {
-						if a.LargeUrl != nil {
-							assetChan <- *a.LargeUrl
-						} else if a.MedUrl != nil {
-							assetChan <- *a.MedUrl
-						} else if a.SmallUrl != nil {
-							assetChan <- *a.SmallUrl
-						}
+						assetChan <- a
 					}
 				}()
 			}
@@ -467,122 +529,17 @@ func compileAssetURLs(season string, gameIDs []string, playerIDs []string) ([]st
 		return nil, errors.Join(errs...)
 	}
 
-	urls := make([]string, 0, len(assetChan))
+	assetMap := map[float64]nba.VideoDetailAsset{}
 	for a := range assetChan {
-		urls = append(urls, a)
-	}
-	return urls, nil
-}
-
-func downloadAndConcat(urls []string) (string, error) {
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "")
-	if err != nil {
-		return "", utils.ErrorWithTrace(err)
-	}
-
-	wg := sync.WaitGroup{}
-	errChan := make(chan error, 1024)
-
-	for i, u := range urls {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			fileName := fmt.Sprintf("%s/%04d.mp4", tmpDir, i)
-			if err := utils.CurlToFile(u, fileName); err != nil {
-				errChan <- utils.ErrorWithTrace(err)
-			}
-		}()
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	if len(errChan) > 0 {
-		errs := make([]error, 0, len(errChan))
-		for err := range errChan {
-			errs = append(errs, err)
+		if a.EventID == nil {
+			continue
 		}
-		_ = os.RemoveAll(tmpDir)
-		return "", utils.ErrorWithTrace(errors.Join(errs...))
+		assetMap[*a.EventID] = a
+	}
+	assets := make([]nba.VideoDetailAsset, 0, len(assetMap))
+	for _, v := range assetMap {
+		assets = append(assets, v)
 	}
 
-	vid, err := ffmpegConcat(tmpDir)
-	if err != nil {
-		return "", utils.ErrorWithTrace(err)
-	}
-
-	return vid, nil
-}
-
-func sortAssetURLs(assets *[]string) error {
-	re := regexp.MustCompile(`(?:https:\/\/videos.nba.com\/nba\/pbp\/media\/\d+\/\d+\/\d+\/)(\d+)\/(\d+)`)
-	errs := []error{}
-	slices.SortStableFunc(*assets, func(a, b string) int {
-		matchesA := re.FindStringSubmatch(a)
-		matchesB := re.FindStringSubmatch(b)
-
-		sortNumA := matchesA[1] + fmt.Sprintf("%03s", matchesA[2])
-		sortNumB := matchesB[1] + fmt.Sprintf("%03s", matchesB[2])
-
-		numA, err := strconv.Atoi(sortNumA)
-		if err != nil {
-			errs = append(errs, err)
-			return 0
-		}
-		numB, err := strconv.Atoi(sortNumB)
-		if err != nil {
-			errs = append(errs, err)
-			return 0
-		}
-
-		return numA - numB
-	})
-	if len(errs) > 0 {
-		errors.Join(errs...)
-	}
-	return nil
-}
-
-// ffmpeg is written in c and assembly language
-func ffmpegConcat(dir string) (string, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return "", utils.ErrorWithTrace(err)
-	}
-
-	listName := fmt.Sprintf("%s/files.txt", dir)
-	list, err := os.Create(listName)
-	if err != nil {
-		return "", utils.ErrorWithTrace(err)
-	}
-	defer list.Close()
-
-	for _, f := range files {
-		_, err := list.Write([]byte(fmt.Sprintf("file '%s'\n", f.Name())))
-		if err != nil {
-			return "", utils.ErrorWithTrace(err)
-		}
-	}
-
-	timeString := fmt.Sprintf("%d%d", time.Now().Unix(), rand.Intn(math.MaxInt64))
-	sum := md5.Sum([]byte(timeString))
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", utils.ErrorWithTrace(err)
-	}
-	outputFileName := home + "/Downloads/" + fmt.Sprintf("%x", sum) + ".mp4"
-
-	fmt.Println(dir, listName)
-
-	args := []string{"-hide_banner", "-v", "fatal", "-f", "concat", "-safe", "0", "-vsync", "0", "-i", fmt.Sprintf("%s/files.txt", dir), "-c", "copy", outputFileName}
-	cmd := exec.Command("ffmpeg", args...)
-	cmd.Stdin, cmd.Stderr, cmd.Stdout = os.Stdin, os.Stderr, os.Stdout
-
-	if err := cmd.Run(); err != nil {
-		_ = os.RemoveAll(dir)
-		_ = os.Remove(outputFileName)
-		return "", utils.ErrorWithTrace(err)
-	}
-
-	return outputFileName, nil
+	return assets, nil
 }

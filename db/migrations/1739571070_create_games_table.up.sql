@@ -12,5 +12,17 @@ CREATE TABLE
     loser_id INTEGER REFERENCES teams (id),
     loser_score INTEGER,
     home_team_id INTEGER REFERENCES teams (id),
-    away_team_id INTEGER REFERENCES teams (id)
-  )
+    away_team_id INTEGER REFERENCES teams (id),
+    created_at TIMESTAMP DEFAULT (datetime ('now', 'localtime')),
+    updated_at TIMESTAMP DEFAULT (datetime ('now', 'localtime'))
+  );
+
+CREATE TRIGGER IF NOT EXISTS update_games_modtime AFTER
+UPDATE ON games FOR EACH ROW BEGIN
+UPDATE games
+SET
+  updated_at = datetime ('now', 'localtime')
+WHERE
+  id = NEW.id;
+
+END;
