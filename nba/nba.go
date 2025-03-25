@@ -752,7 +752,7 @@ func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAsset
 	unmarshalledBody := VideoDetailsAssetResp{}
 	err = json.Unmarshal(body, &unmarshalledBody)
 	if err != nil && strings.Contains(err.Error(), "invalid character '<'") {
-		return nil, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json"))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json when querying for %s", contextMeasure))
 	} else if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
