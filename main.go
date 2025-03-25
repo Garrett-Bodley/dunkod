@@ -25,38 +25,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
-var sigChan = make(chan os.Signal, 1)
-
-func init() {
-	if err := config.LoadConfig(); err != nil {
-		panic(err)
-	}
-	if err := db.SetupDatabase(); err != nil {
-		panic(err)
-	}
-	if err := db.RunMigrations(); err != nil {
-		panic(err)
-	}
-	if err := db.ValidateMigrations(); err != nil {
-		panic(err)
-	}
-	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
-	go cleanup()
-	go nba.PlayerCacheJanitor()
-	go youtube.ServiceJanitor()
-	go scrapingDaemon()
-	fmt.Println("The New York Knickerbockers are named after pants")
-}
-
-func cleanup() {
-	<-sigChan
-	fmt.Println("\nclosing database...")
-	if err := db.Close(); err != nil {
-		panic(err)
-	}
-	os.Exit(0)
-}
-
 type Templates struct {
 	templates *template.Template
 }
@@ -138,9 +106,41 @@ func newJobState(job *db.Job) *JobState {
 	}
 }
 
+var sigChan = make(chan os.Signal, 1)
+
+func init() {
+	if err := config.LoadConfig(); err != nil {
+		panic(err)
+	}
+	if err := db.SetupDatabase(); err != nil {
+		panic(err)
+	}
+	if err := db.RunMigrations(); err != nil {
+		panic(err)
+	}
+	if err := db.ValidateMigrations(); err != nil {
+		panic(err)
+	}
+	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
+	go cleanup()
+	go nba.PlayerCacheJanitor()
+	go youtube.ServiceJanitor()
+	go scrapingDaemon()
+	fmt.Println("The New York Knickerbockers are named after pants")
+}
+
+func cleanup() {
+	<-sigChan
+	fmt.Println("\nclosing database...")
+	if err := db.Close(); err != nil {
+		panic(err)
+	}
+	os.Exit(0)
+}
+
 func main() {
-	scheduler1 := jobs.NewScheduler(0, db.GetDb(), 4, time.Second*10)
-	scheduler2 := jobs.NewScheduler(0, db.GetDb(), 4, time.Second*10)
+	scheduler1 := jobs.NewScheduler(0, 2, time.Second*10)
+	scheduler2 := jobs.NewScheduler(0, 2, time.Second*10)
 	go scheduler1.Start()
 	go scheduler2.Start()
 
