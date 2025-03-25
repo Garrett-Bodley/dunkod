@@ -20,8 +20,6 @@ import (
 	"dunkod/nba"
 	"dunkod/utils"
 	"dunkod/youtube"
-
-	"github.com/jmoiron/sqlx"
 )
 
 const titleCharLimit = 100
@@ -29,15 +27,13 @@ const descCharLimit = 5000
 
 type Worker struct {
 	Id     int
-	Db     *sqlx.DB
 	Quit   chan bool
 	IsIdle bool
 }
 
-func NewWorker(id int, db *sqlx.DB) *Worker {
+func NewWorker(id int) *Worker {
 	return &Worker{
 		Id:     id,
-		Db:     db,
 		Quit:   make(chan bool, 1),
 		IsIdle: true,
 	}
@@ -69,6 +65,8 @@ func (w *Worker) DoYourJob(job *db.Job) {
 		}
 	}
 
+	job.State = "DOWNLOADING CLIPS"
+	db.UpdateJob(job)
 	sortAssetURLs(&assetURLs)
 	vidPath, err := downloadAndConcat(assetURLs)
 	defer func() { _ = os.Remove(vidPath) }()
@@ -288,11 +286,11 @@ func ffmpegConcat(dir string) (string, error) {
 
 	timeString := fmt.Sprintf("%d%d", time.Now().Unix(), rand.Intn(math.MaxInt64))
 	sum := md5.Sum([]byte(timeString))
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", utils.ErrorWithTrace(err)
-	}
-	outputFileName := home + "/Downloads/" + fmt.Sprintf("%x", sum) + ".mp4"
+	// home, err := os.UserHomeDir()
+	// if err != nil {
+	// 	return "", utils.ErrorWithTrace(err)
+	// }
+	outputFileName := os.TempDir() + "/" + fmt.Sprintf("%x", sum) + ".mp4"
 
 	args := []string{"-hide_banner", "-v", "fatal", "-f", "concat", "-safe", "0", "-vsync", "0", "-i", fmt.Sprintf("%s/files.txt", dir), "-c", "copy", outputFileName}
 	cmd := exec.Command("ffmpeg", args...)
@@ -372,22 +370,20 @@ func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.Video
 
 type Scheduler struct {
 	Id           int
-	Db           *sqlx.DB
 	MaxWorkers   int
 	PollInterval time.Duration
 	Workers      []*Worker
 }
 
-func NewScheduler(id int, db *sqlx.DB, maxWorkers int, pollInterval time.Duration) *Scheduler {
+func NewScheduler(id int, maxWorkers int, pollInterval time.Duration) *Scheduler {
 	s := Scheduler{
 		Id:           id,
-		Db:           db,
 		MaxWorkers:   maxWorkers,
 		PollInterval: pollInterval,
 		Workers:      make([]*Worker, 0, maxWorkers),
 	}
 	for i := range maxWorkers {
-		s.Workers = append(s.Workers, NewWorker(i, db))
+		s.Workers = append(s.Workers, NewWorker(i))
 	}
 	return &s
 }
@@ -411,7 +407,6 @@ func (s *Scheduler) Start() {
 			log.Println(utils.ErrorWithTrace(err))
 			continue
 		}
-
 		go w.DoYourJob(job)
 	}
 }
