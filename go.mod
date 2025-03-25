@@ -1,14 +1,15 @@
 module dunkod
 
-go 1.23.0
+go 1.24.1
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.18.2
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/labstack/echo/v4 v4.13.3
+	github.com/spf13/pflag v1.0.6
 	golang.org/x/net v0.37.0
 	golang.org/x/oauth2 v0.28.0
-	google.golang.org/api v0.227.0
+	google.golang.org/api v0.228.0
 )
 
 require (
@@ -41,7 +42,7 @@ require (
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/grpc v1.71.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )

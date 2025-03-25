@@ -21,14 +21,13 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-var db *sqlx.DB
-
-func GetDb() *sqlx.DB {
-	return db
-}
+var dbRW *sqlx.DB
+var dbRO *sqlx.DB
 
 func Close() error {
-	return db.Close()
+	rwErr := dbRW.Close()
+	roErr := dbRO.Close()
+	return errors.Join(rwErr, roErr)
 }
 
 func SetupDatabase() error {
@@ -46,7 +45,13 @@ func SetupDatabase() error {
 	} else if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	db, err = sqlx.Connect("sqlite3", config.DatabaseFile+"?_journal_mode=WAL&_sync=NORMAL&_fk=true&_busy_timeout=5000")
+	dbRW, err = sqlx.Connect("sqlite3", "file://"+config.DatabaseFile+"?_journal_mode=WAL&_fk=true&_mode=rw&_txlock=immediate")
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	dbRW.SetMaxOpenConns(1)
+
+	dbRO, err = sqlx.Connect("sqlite3", "file://"+config.DatabaseFile+"?_journal_mode=WAL&_fk=true&_mode=ro")
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
@@ -72,7 +77,7 @@ func RunMigrations() error {
 
 func ValidateMigrations() error {
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM teams").Scan(&count); err != nil {
+	if err := dbRO.QueryRow("SELECT COUNT(*) FROM teams").Scan(&count); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 
@@ -81,13 +86,13 @@ func ValidateMigrations() error {
 	}
 
 	var name string
-	if err := db.QueryRow("SELECT name FROM teams WHERE id = 1610612752").Scan(&name); err != nil {
+	if err := dbRO.QueryRow("SELECT name FROM teams WHERE id = 1610612752").Scan(&name); err != nil {
 		return utils.ErrorWithTrace(fmt.Errorf("failed to find Knicks: %v", err))
 	}
 	if name != "New York Knicks" {
 		return utils.ErrorWithTrace(fmt.Errorf("expected team.id 1610612752 to have name 'New York Knicks', got '%s'", name))
 	}
-	err := db.QueryRow("SELECT name FROM teams WHERE id = 0").Scan(&name)
+	err := dbRO.QueryRow("SELECT name FROM teams WHERE id = 0").Scan(&name)
 	if err != nil {
 		return utils.ErrorWithTrace(fmt.Errorf("faild to find NULL_TEAM: %v", err))
 	}
@@ -158,7 +163,7 @@ func (g DatabaseGame) ToString() string {
 }
 
 func InsertGames(games []DatabaseGame) error {
-	tx, err := db.Beginx()
+	tx, err := dbRW.Beginx()
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
@@ -190,6 +195,9 @@ func InsertGames(games []DatabaseGame) error {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
+	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
 	return nil
 }
 
@@ -197,7 +205,7 @@ func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
 	if utils.IsInvalidSeason(season) {
 		return nil, fmt.Errorf("invalid season provided: %s", season)
 	}
-	tx, err := db.Beginx()
+	tx, err := dbRO.Beginx()
 	defer tx.Rollback()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -220,7 +228,7 @@ func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
 }
 
 func SelectGamesById(ids []string) ([]DatabaseGame, error) {
-	tx, err := db.Beginx()
+	tx, err := dbRO.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -295,7 +303,7 @@ func (j *Job) OhNo(e error) error {
 }
 
 func InsertJob(job *Job) (*Job, error) {
-	tx, err := db.Beginx()
+	tx, err := dbRW.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -348,22 +356,26 @@ func InsertJob(job *Job) (*Job, error) {
 		return nil, err
 	}
 	jobRes := Job{}
-	if err := db.Get(&jobRes, "SELECT * FROM jobs WHERE job_hash = ?", job.Hash); err != nil {
+	if err := dbRW.Get(&jobRes, "SELECT * FROM jobs WHERE job_hash = ?", job.Hash); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	if _, err := dbRW.Exec("PRAGMA wal_checkpoint;"); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
 	return &jobRes, nil
 }
 
 func SelectJobBySlug(slug string) (*Job, error) {
 	var job Job
-	if err := db.Get(&job, "SELECT * from jobs where slug = ?", slug); err != nil {
+	if err := dbRO.Get(&job, "SELECT * from jobs where slug = ?", slug); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	return &job, nil
 }
 
 func SelectJobForUpdate() (*Job, error) {
-	tx, err := db.Beginx()
+	tx, err := dbRW.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -439,11 +451,14 @@ func SelectJobForUpdate() (*Job, error) {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 	return &job, nil
 }
 
 func UpdateJob(job *Job) error {
-	tx, err := db.Beginx()
+	tx, err := dbRW.Beginx()
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
@@ -453,6 +468,9 @@ func UpdateJob(job *Job) error {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := commitTx(tx, 5*time.Second); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -478,7 +496,7 @@ func NewVideo(title, description, url string, jobId int) *Video {
 }
 
 func InsertVideo(video *Video) error {
-	tx, err := db.Beginx()
+	tx, err := dbRW.Beginx()
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
@@ -496,11 +514,14 @@ func InsertVideo(video *Video) error {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
+	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
 	return nil
 }
 
 func SelectVideoByJobId(id int) (*Video, error) {
-	tx, err := db.Beginx()
+	tx, err := dbRO.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}

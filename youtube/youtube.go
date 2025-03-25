@@ -183,7 +183,7 @@ func UploadFile(filepath, title, description string, tags []string) (string, err
 
 	// Set the privacy status
 	status := &youtube.VideoStatus{
-		PrivacyStatus:           "private",
+		PrivacyStatus:           "public",
 		MadeForKids:             false,
 		SelfDeclaredMadeForKids: false,
 	}
