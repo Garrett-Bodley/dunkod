@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"fmt"
 
 	flag "github.com/spf13/pflag"
 )
@@ -41,7 +40,7 @@ func LoadConfig() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(*ProdFlag)
+
 	if *ProdFlag {
 		DatabaseFile = "/sqlitedata/database.db"
 		SecretFile = "/secrets/secret.json"

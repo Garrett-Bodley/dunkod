@@ -66,7 +66,13 @@ func (w *Worker) DoYourJob(job *db.Job) {
 	}
 
 	job.State = "DOWNLOADING CLIPS"
-	db.UpdateJob(job)
+	if err := db.UpdateJob(job); err != nil {
+		if err := job.OhNo(err); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
 	sortAssetURLs(&assetURLs)
 	vidPath, err := downloadAndConcat(assetURLs)
 	defer func() { _ = os.Remove(vidPath) }()
@@ -98,7 +104,6 @@ func (w *Worker) DoYourJob(job *db.Job) {
 
 	title := makeTitle(games, players)
 	desc := makeDescription(job.Season, games, players)
-	// tags := makeTags(job.Season, games, players)
 
 	job.State = "UPLOADING"
 	if err := db.UpdateJob(job); err != nil {
