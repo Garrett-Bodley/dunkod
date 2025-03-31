@@ -4,6 +4,7 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      {{ template "favicon" . }}
       <script
         src="https://unpkg.com/htmx.org@2.0.4"
         integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
@@ -11,7 +12,7 @@
       ></script>
       <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
     </head>
-    <body class="flex items-center justify-center min-h-screen bg-gray-100 outline">
+    <body class="flex items-center justify-center min-h-screen bg-gray-100">
       <div class="flex flex-col items-center lg:p-7 rounded-2xl">
         <a href="/">
           <h1 class="text-3xl font-bold mb-4">Dunks On Demand 🏀</h1>
