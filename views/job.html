@@ -20,14 +20,7 @@
         <div class="bg-white p-6 rounded-lg shadow-md pb-12 mb-20 min-w-screen sm:min-w-lg">
           {{ if .Job }}
             <div class="block text-gray-700 text-sm font-bold mb-2">Status: </div>
-            <div id="state" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
-              {{ .Job.State }}
-            </div>
-            {{ if eq .Job.State "ERROR" }}
-              <div id="error-details" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
-                {{ .Job.ErrorDetails }}
-              </div>
-            {{ end }}
+            {{ template "state" .Job }}
             <div class="block text-gray-700 text-sm font-bold mb-2">Players: </div>
             <div id="players" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
               {{ range .Players }}
@@ -57,4 +50,24 @@
 
     </body>
   </html>
+{{ end }}
+
+{{ block "state" . }}
+  <div
+    id="state"
+    class="bg-gray-100 rounded-lg mb-2 px-3 py-2"
+    {{ if and (ne .State "FINISHED") (ne .State "ERROR") }}
+      hx-get="/{{ .Slug }}/status"
+      hx-trigger="every 1s"
+      hx-target="#state"
+      hx-swap="outerHTML"
+    {{ end }}
+  >
+    {{ .State }}
+  </div>
+  {{ if eq .State "ERROR" }}
+    <div id="error-details" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
+      {{ .ErrorDetails }}
+    </div>
+  {{ end }}
 {{ end }}
