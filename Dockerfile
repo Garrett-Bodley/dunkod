@@ -25,5 +25,6 @@ WORKDIR /app
 COPY --from=builder /app/dunkod .
 COPY --from=builder /app/db/migrations ./db/migrations
 COPY --from=builder /app/views ./views
+COPY --from=builder /app/assets ./assets
 
 CMD ["./dunkod", "-p"]
