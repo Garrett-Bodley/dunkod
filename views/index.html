@@ -11,9 +11,15 @@
       integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
       crossorigin="anonymous"
     ></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/loading-states.js"></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+      [data-loading] {
+        display: none;
+      }
+    </style>
   </head>
-  <body class="flex items-center justify-center min-h-screen bg-gray-100 outline">
+  <body class="flex items-center justify-center min-h-screen bg-gray-100 outline" hx-ext="loading-states">
     <div class="flex flex-col items-center lg:p-7 rounded-2xl">
       <a href="/">
         <h1 class="text-3xl font-bold mb-4">Dunks On Demand 🏀</h1>
@@ -22,7 +28,16 @@
         {{ template "season" .ValidSeasons }}
         {{ template "games-and-players" . }}
         {{ template "error" .Error }}
-        <button hx-post="/" hx-target="#error" hx-swap="outerHTML" class="w-full mt-4 bg-black text-white py-2 rounded-lg hover:bg-gray-800 cursor-pointer">👉👈</button>
+        <button
+          hx-post="/"
+          hx-target="#error"
+          hx-swap="outerHTML"
+          class="w-full mt-4 bg-black text-white py-2 rounded-lg hover:bg-gray-800"
+          data-loading-class-remove="cursor-pointer"
+          data-loading-class="cursor-progress"
+          data-loading-path="/"
+          data-loading-disable
+        >👉👈</button>
       </form>
     </div>
 
