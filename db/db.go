@@ -195,7 +195,7 @@ func InsertGames(games []DatabaseGame) error {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+	if err := walCheckpoint(); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -359,10 +359,9 @@ func InsertJob(job *Job) (*Job, error) {
 	if err := dbRW.Get(&jobRes, "SELECT * FROM jobs WHERE job_hash = ?", job.Hash); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	if _, err := dbRW.Exec("PRAGMA wal_checkpoint;"); err != nil {
+	if err := walCheckpoint(); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-
 	return &jobRes, nil
 }
 
@@ -451,7 +450,7 @@ func SelectJobForUpdate() (*Job, error) {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+	if err := walCheckpoint(); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	return &job, nil
@@ -470,7 +469,7 @@ func UpdateJob(job *Job) error {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+	if err := walCheckpoint(); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -514,7 +513,7 @@ func InsertVideo(video *Video) error {
 	if err := commitTx(tx, 5*time.Second); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+	if err := walCheckpoint(); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -571,4 +570,11 @@ func commitTx(tx *sqlx.Tx, timeout time.Duration) error {
 		return utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to commit sql transaction after %d seconds", int(timeout.Seconds())))
 	}
 
+}
+
+func walCheckpoint() error {
+	if _, err := dbRW.Exec("PRAGMA wal_checkpoint(TRUNCATE);"); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	return nil
 }
