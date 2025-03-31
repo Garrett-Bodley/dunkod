@@ -368,6 +368,21 @@ func main() {
 		return c.Render(200, "job", jobState)
 	})
 
+	e.GET("/:slug/status", func(c echo.Context) error {
+		slug := c.Param("slug")
+		job, err := db.SelectJobBySlug(slug)
+		redirect := fmt.Sprintf("/%s", slug)
+		if err != nil {
+			c.Response().Header().Set("HX-Redirect", redirect)
+			return c.NoContent(200)
+		}
+		if job.State == "FINISHED" {
+			c.Response().Header().Set("HX-Redirect", redirect)
+			return c.NoContent(200)
+		}
+		return c.Render(200, "state", job)
+	})
+
 	e.Logger.Fatal(e.Start(":8080"))
 }
 
