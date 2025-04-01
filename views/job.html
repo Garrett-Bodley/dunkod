@@ -11,6 +11,24 @@
         crossorigin="anonymous"
       ></script>
       <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+      <style>
+
+        .fade {
+          opacity: 1;
+          transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        }
+
+        .htmx-swapping {
+          transform: translateY(1rem);
+          opacity: 0;
+        }
+
+        .htmx-added {
+          transition: transform 0.2s ease-in;
+          transform: translateY(-1rem);
+          opacity: 0;
+        }
+      </style>
     </head>
     <body class="flex items-center justify-center min-h-screen bg-gray-100">
       <div class="flex flex-col items-center lg:p-7 rounded-2xl">
@@ -22,13 +40,13 @@
             <div class="block text-gray-700 text-sm font-bold mb-2">Status: </div>
             {{ template "state" .Job }}
             <div class="block text-gray-700 text-sm font-bold mb-2">Players: </div>
-            <div id="players" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
+            <div id="players" class="rounded-lg mb-2 py-2">
               {{ range .Players }}
                 <div>{{ . }}</div>
               {{ end }}
             </div>
             <div class="block text-gray-700 text-sm font-bold mb-2"> Games: </div>
-            <div id="games" class="bg-gray-100 rounded-lg px-3 py-2 {{ if .Video }} mb-2 {{ end }}">
+            <div id="games" class="rounded-lg py-2 {{ if .Video }} mb-2 {{ end }}">
               {{ range .Games }}
                 <div>{{ . }}</div>
               {{ end }}
@@ -55,18 +73,18 @@
 {{ block "state" . }}
   <div
     id="state"
-    class="bg-gray-100 rounded-lg mb-2 px-3 py-2"
+    class="rounded-lg mb-2 py-2 fade"
     {{ if and (ne .State "FINISHED") (ne .State "ERROR") }}
       hx-post="/{{ .Slug }}/status/{{ .State }}"
       hx-trigger="every 1s"
       hx-target="#state"
-      hx-swap="outerHTML"
+      hx-swap="outerHTML swap:0.1s settle:0.1s"
     {{ end }}
   >
     {{ .State }}
   </div>
   {{ if eq .State "ERROR" }}
-    <div id="error-details" class="bg-gray-100 rounded-lg mb-2 px-3 py-2">
+    <div id="error-details" class="rounded-lg mb-2 px-3 py-2">
       {{ .ErrorDetails }}
     </div>
   {{ end }}
