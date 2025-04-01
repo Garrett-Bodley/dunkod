@@ -57,7 +57,7 @@
     id="state"
     class="bg-gray-100 rounded-lg mb-2 px-3 py-2"
     {{ if and (ne .State "FINISHED") (ne .State "ERROR") }}
-      hx-get="/{{ .Slug }}/status"
+      hx-post="/{{ .Slug }}/status/{{ .State }}"
       hx-trigger="every 1s"
       hx-target="#state"
       hx-swap="outerHTML"

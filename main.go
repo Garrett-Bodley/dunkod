@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"html/template"
@@ -368,14 +369,24 @@ func main() {
 		return c.Render(200, "job", jobState)
 	})
 
-	e.GET("/:slug/status", func(c echo.Context) error {
+	e.POST("/:slug/status/:state", func(c echo.Context) error {
 		slug := c.Param("slug")
+		state := c.Param("state")
 		job, err := db.SelectJobBySlug(slug)
 		redirect := fmt.Sprintf("/%s", slug)
 		if err != nil {
-			c.Response().Header().Set("HX-Redirect", redirect)
-			return c.NoContent(200)
+			if errors.Is(err, sql.ErrNoRows) {
+				return c.NoContent(404)
+			} else {
+				c.Response().Header().Set("HX-Redirect", redirect)
+				return c.NoContent(200)
+
+			}
 		}
+		if job.State == state {
+			return c.NoContent(204)
+		}
+
 		if job.State == "FINISHED" {
 			c.Response().Header().Set("HX-Redirect", redirect)
 			return c.NoContent(200)
