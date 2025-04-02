@@ -77,7 +77,7 @@ func RunMigrations() error {
 
 func ValidateMigrations() error {
 	var count int
-	if err := dbRO.QueryRow("SELECT COUNT(*) FROM teams").Scan(&count); err != nil {
+	if err := dbRO.QueryRow("SELECT COUNT(*) FROM teams;").Scan(&count); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 
@@ -86,13 +86,13 @@ func ValidateMigrations() error {
 	}
 
 	var name string
-	if err := dbRO.QueryRow("SELECT name FROM teams WHERE id = 1610612752").Scan(&name); err != nil {
+	if err := dbRO.QueryRow("SELECT name FROM teams WHERE id = 1610612752;").Scan(&name); err != nil {
 		return utils.ErrorWithTrace(fmt.Errorf("failed to find Knicks: %v", err))
 	}
 	if name != "New York Knicks" {
 		return utils.ErrorWithTrace(fmt.Errorf("expected team.id 1610612752 to have name 'New York Knicks', got '%s'", name))
 	}
-	err := dbRO.QueryRow("SELECT name FROM teams WHERE id = 0").Scan(&name)
+	err := dbRO.QueryRow("SELECT name FROM teams WHERE id = 0;").Scan(&name)
 	if err != nil {
 		return utils.ErrorWithTrace(fmt.Errorf("faild to find NULL_TEAM: %v", err))
 	}
@@ -163,6 +163,10 @@ func (g DatabaseGame) ToString() string {
 }
 
 func InsertGames(games []DatabaseGame) error {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRW.Beginx()
 	if err != nil {
 		return utils.ErrorWithTrace(err)
@@ -178,7 +182,7 @@ func InsertGames(games []DatabaseGame) error {
 			:id, :season, :game_date, :matchup, :season_type, :winner_name,
 			:winner_id, :winner_score, :loser_name, :loser_id, :loser_score,
 			:home_team_id, :away_team_id
-		)
+		);
 	`
 	batch_size := 500
 	for i := 0; i < len(games); i += batch_size {
@@ -186,13 +190,12 @@ func InsertGames(games []DatabaseGame) error {
 			batch_size = len(games) - i
 		}
 		batch := games[i : i+batch_size]
-		_, err = tx.NamedExec(query, batch)
-		if err != nil {
+		if err := namedExec(tx, &ctx, query, batch); err != nil {
 			return utils.ErrorWithTrace(err)
 		}
 	}
 
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := walCheckpoint(); err != nil {
@@ -205,22 +208,21 @@ func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
 	if utils.IsInvalidSeason(season) {
 		return nil, fmt.Errorf("invalid season provided: %s", season)
 	}
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRO.Beginx()
 	defer tx.Rollback()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 
-	query := `
-		SELECT * FROM games WHERE season = ? ORDER BY game_date DESC;
-	`
-
 	games := []DatabaseGame{}
-	err = tx.Select(&games, query, season)
-	if err != nil {
+	if err := selekt(tx, &ctx, &games, "SELECT * FROM games WHERE season = ? ORDER BY game_date DESC;", season); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 
@@ -228,13 +230,17 @@ func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
 }
 
 func SelectGamesById(ids []string) ([]DatabaseGame, error) {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRO.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Preparex(`SELECT * FROM games WHERE id = ?`)
+	stmt, err := tx.Preparex("SELECT * FROM games WHERE id = ?;")
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -243,16 +249,14 @@ func SelectGamesById(ids []string) ([]DatabaseGame, error) {
 	games := make([]DatabaseGame, 0, len(ids))
 	for _, id := range ids {
 		var game DatabaseGame
-		if err := stmt.Get(&game, id); err != nil {
-			fmt.Println(id)
+		if err := stmtDotGet(stmt, &ctx, &game, id); err != nil {
 			return nil, utils.ErrorWithTrace(err)
 		}
 		games = append(games, game)
 	}
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-
 	return games, nil
 }
 
@@ -303,6 +307,10 @@ func (j *Job) OhNo(e error) error {
 }
 
 func InsertJob(job *Job) (*Job, error) {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRW.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -310,24 +318,23 @@ func InsertJob(job *Job) (*Job, error) {
 	defer tx.Rollback()
 
 	var existingJob Job
-	err = tx.Get(&existingJob, "SELECT * FROM jobs WHERE job_hash = ?", job.Hash)
+	err = get(tx, &ctx, &existingJob, "SELECT * FROM jobs WHERE job_hash = ?;", job.Hash)
 	if err == nil {
-		_ = tx.Commit()
 		return &existingJob, nil
-	} else if err != sql.ErrNoRows {
+	} else if !strings.Contains(err.Error(), sql.ErrNoRows.Error()) {
 		return nil, utils.ErrorWithTrace(err)
 	}
 
-	maxAttempts := 10
+	maxAttempts := 50
 	var slug string
 	var count int
-	slugStmt, err := tx.Prepare("SELECT COUNT(*) FROM jobs WHERE slug = ?")
+	slugStmt, err := tx.Prepare("SELECT COUNT(*) FROM jobs WHERE slug = ?;")
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	for range maxAttempts {
 		slug = utils.CreateSlug()
-		err := slugStmt.QueryRow(slug).Scan(&count)
+		err := stmtDotQueryRow(slugStmt, &ctx, []any{slug}, []any{&count})
 		if err != nil {
 			return nil, utils.ErrorWithTrace(err)
 		}
@@ -338,7 +345,6 @@ func InsertJob(job *Job) (*Job, error) {
 	if count != 0 {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("failed to create unique slug after %d attempts", maxAttempts))
 	}
-
 	job.Slug = slug
 
 	query := `
@@ -346,108 +352,69 @@ func InsertJob(job *Job) (*Job, error) {
 			players, games, season, slug, job_state, job_hash
 		) VALUES (
 			:players, :games, :season, :slug, :job_state, :job_hash
-		)
+		);
 	`
-	_, err = tx.NamedExec(query, job)
-	if err != nil {
+	if err := namedExec(tx, &ctx, query, job); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return nil, err
-	}
-	jobRes := Job{}
-	if err := dbRW.Get(&jobRes, "SELECT * FROM jobs WHERE job_hash = ?", job.Hash); err != nil {
-		return nil, utils.ErrorWithTrace(err)
 	}
 	if err := walCheckpoint(); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	return &jobRes, nil
+	tx, err = dbRO.Beginx()
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	if err := get(tx, &ctx, job, "SELECT * FROM jobs WHERE job_hash = ?;", job.Hash); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	return job, nil
 }
 
 func SelectJobBySlug(slug string) (*Job, error) {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	tx, err := dbRO.Beginx()
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	defer tx.Rollback()
+
 	var job Job
-	if err := dbRO.Get(&job, "SELECT * from jobs where slug = ?", slug); err != nil {
+	if err := get(tx, &ctx, &job, "SELECT * from jobs where slug = ?;", slug); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	return &job, nil
 }
 
 func SelectJobForUpdate() (*Job, error) {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRW.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	defer tx.Rollback()
 
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	errChan := make(chan error, 1)
 	var job Job
-
-	go func() {
-		for {
-			err := tx.Get(&job, "SELECT * FROM jobs WHERE job_state = 'PENDING' ORDER BY created_at LIMIT 1")
-			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					errChan <- utils.ErrorWithTrace(fmt.Errorf("QUEUE EMPTY"))
-					return
-				}
-				if strings.Contains(err.Error(), "lock") {
-					time.Sleep(20 * time.Millisecond)
-					if ctx.Err() != nil {
-						return
-					}
-					continue
-
-				} else {
-					errChan <- err
-					return
-				}
-			}
-			errChan <- nil
-		}
-	}()
-
-	select {
-	case err := <-errChan:
-		if err != nil {
+	if err := get(tx, &ctx, &job, "SELECT * FROM jobs WHERE job_state = 'PENDING' ORDER BY created_at LIMIT 1;"); err != nil {
+		if strings.Contains(err.Error(), sql.ErrNoRows.Error()) {
+			return nil, fmt.Errorf("QUEUE EMPTY")
+		} else {
 			return nil, utils.ErrorWithTrace(err)
 		}
-	case <-ctx.Done():
-		return nil, utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to select a job after %d seconds", int(timeout.Seconds())))
 	}
-
 	job.State = "PROCESSING"
-	go func() {
-		for {
-			_, err := tx.Exec("UPDATE jobs SET job_state = 'PROCESSING' WHERE id = ?", job.Id)
-			if err != nil {
-				if strings.Contains(err.Error(), "lock") {
-					time.Sleep(20 * time.Millisecond)
-					if ctx.Err() != nil {
-						return
-					}
-					continue
-				} else {
-					errChan <- err
-				}
-			}
-			errChan <- nil
-		}
-	}()
-
-	select {
-	case err := <-errChan:
-		if err != nil {
-			return nil, utils.ErrorWithTrace(err)
-		}
-	case <-ctx.Done():
-		return nil, utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to select a job after %d seconds", int(timeout.Seconds())))
+	if err := exec(tx, &ctx, "UPDATE jobs SET job_state = 'PROCESSING' WHERE id = ?;", job.Id); err != nil {
+		return nil, utils.ErrorWithTrace(err)
 	}
-
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	if err := walCheckpoint(); err != nil {
@@ -457,16 +424,20 @@ func SelectJobForUpdate() (*Job, error) {
 }
 
 func UpdateJob(job *Job) error {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRW.Beginx()
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	defer tx.Rollback()
-
-	if _, err := tx.NamedExec("UPDATE jobs SET (job_state, error_details) = (:job_state, :error_details) WHERE id = :id", job); err != nil {
+	query := "UPDATE jobs SET (job_state, error_details) = (:job_state, :error_details) WHERE id = :id;"
+	if err := namedExec(tx, &ctx, query, job); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := walCheckpoint(); err != nil {
@@ -495,22 +466,26 @@ func NewVideo(title, description, url string, jobId int) *Video {
 }
 
 func InsertVideo(video *Video) error {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRW.Beginx()
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 
-	_, err = tx.NamedExec(`
+	query := `
 		INSERT INTO videos (
 			title, description, youtube_url, job_id
 		) VALUES (
 			:title, :description, :youtube_url, :job_id
-		)
-	`, video)
-	if err != nil {
+		);
+	`
+	if err := namedExec(tx, &ctx, query, video); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := commitTx(tx, 5*time.Second); err != nil {
+	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := walCheckpoint(); err != nil {
@@ -520,12 +495,16 @@ func InsertVideo(video *Video) error {
 }
 
 func SelectVideoByJobId(id int) (*Video, error) {
+	timeout := 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	tx, err := dbRO.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	res := Video{}
-	if err := tx.Get(&res, "SELECT * FROM videos WHERE job_id = ?", id); err != nil {
+	if err := get(tx, &ctx, &res, "SELECT * FROM videos WHERE job_id = ?;", id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, utils.ErrorWithTrace(fmt.Errorf("unable to find a video associated with this job (◞‸ ◟ ；)"))
 		} else {
@@ -535,16 +514,12 @@ func SelectVideoByJobId(id int) (*Video, error) {
 	return &res, nil
 }
 
-func commitTx(tx *sqlx.Tx, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
+func get(tx *sqlx.Tx, ctx *context.Context, dest any, query string, args ...any) error {
 	errChan := make(chan error, 1)
 	defer close(errChan)
-
 	go func() {
 		for {
-			err := tx.Commit()
+			err := tx.Get(dest, query, args...)
 			if err == nil || errors.Is(err, sql.ErrTxDone) {
 				errChan <- nil
 				return
@@ -552,8 +527,8 @@ func commitTx(tx *sqlx.Tx, timeout time.Duration) error {
 				errChan <- err
 				return
 			}
-			time.Sleep(200 * time.Millisecond)
-			if ctx.Err() != nil {
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
 				return
 			}
 		}
@@ -566,10 +541,199 @@ func commitTx(tx *sqlx.Tx, timeout time.Duration) error {
 		} else {
 			return nil
 		}
-	case <-ctx.Done():
-		return utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to commit sql transaction after %d seconds", int(timeout.Seconds())))
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("Get query timed out"))
 	}
+}
 
+func exec(tx *sqlx.Tx, ctx *context.Context, query string, args ...any) error {
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	go func() {
+		for {
+			_, err := tx.Exec(query, args...)
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				errChan <- err
+				return
+			} else if !strings.Contains(err.Error(), "lock") {
+				errChan <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		} else {
+			return nil
+		}
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("Exec query timed out"))
+	}
+}
+
+func selekt(tx *sqlx.Tx, ctx *context.Context, dest any, query string, args ...any) error {
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	go func() {
+		for {
+			err := tx.Select(dest, query, args...)
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				errChan <- err
+				return
+			} else if !strings.Contains(err.Error(), "lock") {
+				errChan <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		} else {
+			return nil
+		}
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("Select query timed out"))
+	}
+}
+
+func namedExec(tx *sqlx.Tx, ctx *context.Context, query string, arg any) error {
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	go func() {
+		for {
+			_, err := tx.NamedExec(query, arg)
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				errChan <- err
+				return
+			} else if !strings.Contains(err.Error(), "lock") {
+				errChan <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		} else {
+			return nil
+		}
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("NamedExec query timed out"))
+	}
+}
+
+func stmtDotGet(stmt *sqlx.Stmt, ctx *context.Context, dest any, args ...any) error {
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	go func() {
+		for {
+			err := stmt.Get(dest, args...)
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				errChan <- nil
+				return
+			} else if !strings.Contains(err.Error(), "lock") {
+				errChan <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		} else {
+			return nil
+		}
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to Get with prepared statement"))
+	}
+}
+
+func stmtDotQueryRow(stmt *sql.Stmt, ctx *context.Context, args []any, dest []any) error {
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	go func() {
+		for {
+			err := stmt.QueryRow(args...).Scan(dest...)
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				errChan <- nil
+				return
+			} else if !strings.Contains(err.Error(), "lock") {
+				errChan <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		} else {
+			return nil
+		}
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to QueryRow"))
+	}
+}
+
+func commitTx(tx *sqlx.Tx, ctx *context.Context) error {
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	go func() {
+		for {
+			err := tx.Commit()
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				errChan <- nil
+				return
+			} else if !strings.Contains(err.Error(), "lock") {
+				errChan <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			if (*ctx).Err() != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		} else {
+			return nil
+		}
+	case <-(*ctx).Done():
+		return utils.ErrorWithTrace(fmt.Errorf("timed out while attempting to Commit sql transaction"))
+	}
 }
 
 func walCheckpoint() error {

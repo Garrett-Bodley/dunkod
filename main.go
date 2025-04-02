@@ -140,8 +140,8 @@ func cleanup() {
 }
 
 func main() {
-	scheduler1 := jobs.NewScheduler(0, 2, time.Second*10)
-	scheduler2 := jobs.NewScheduler(0, 2, time.Second*10)
+	scheduler1 := jobs.NewScheduler(0, 2, time.Second*2)
+	scheduler2 := jobs.NewScheduler(0, 2, time.Second*2)
 	go scheduler1.Start()
 	go scheduler2.Start()
 
@@ -149,8 +149,7 @@ func main() {
 	e.Use(middleware.Logger())
 
 	e.Renderer = newTemplate()
-	// e.Static("/assets", "assets")
-	// fmt.Println("foo bar")
+	e.Static("/assets", "assets")
 
 	e.GET("/", func(c echo.Context) error {
 		season := "2024-25"
