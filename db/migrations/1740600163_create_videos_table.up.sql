@@ -2,7 +2,7 @@ CREATE TABLE
   IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY UNIQUE,
     title TEXT NOT NULL,
-    description TEXT NOT NULL,
+    video_description TEXT NOT NULL,
     youtube_url TEXT NOT NULL,
     job_id INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT (datetime ('now', 'localtime')),

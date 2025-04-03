@@ -16,9 +16,6 @@ RUN --mount=type=cache,target=/gomod-cache \
 
 FROM alpine:latest
 RUN apk update
-RUN apk add build-base python3-dev libffi-dev openssl-dev py3-pip
-RUN pip install --upgrade pip --break-system-packages
-RUN pip3 install magic-wormhole --break-system-packages
 RUN apk add --no-cache ffmpeg ca-certificates tzdata
 RUN apk add --no-cache sqlite
 WORKDIR /app
