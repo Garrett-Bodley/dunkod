@@ -1,16 +1,16 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
-
-	flag "github.com/spf13/pflag"
 )
 
 var DatabaseFile string
 var SecretFile string
 var TokenFile string
 var ProdFlag *bool
+var BigScrape *bool
 
 var ValidSeasons = []string{
 	"2024-25",
@@ -27,14 +27,16 @@ var ValidSeasons = []string{
 }
 
 var SeasonTypes = []string{
-	"Regular+Season",
 	// "Pre+Season",
-	"Playoffs",
+	"Regular+Season",
 	// "All+Star",
+	"PlayIn",
+	"Playoffs",
 }
 
 func LoadConfig() error {
-	ProdFlag = flag.BoolP("prod", "p", false, "designates production")
+	ProdFlag = flag.Bool("p", false, "designates production")
+	BigScrape = flag.Bool("s", false, "do big scrape task and then die")
 	flag.Parse()
 	binPath, err := os.Executable()
 	if err != nil {
@@ -45,7 +47,7 @@ func LoadConfig() error {
 		DatabaseFile = "/sqlitedata/database.db"
 		SecretFile = "/secrets/secret.json"
 		TokenFile = "/secrets/token.json"
-	}else{
+	} else {
 		DatabaseFile = filepath.Join(filepath.Dir(binPath), "database.db")
 		SecretFile = filepath.Join(filepath.Dir(binPath), "secret.json")
 		TokenFile = filepath.Join(filepath.Dir(binPath), "token.json")

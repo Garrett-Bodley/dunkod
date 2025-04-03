@@ -19,6 +19,7 @@ import (
 	"dunkod/db"
 	"dunkod/jobs"
 	"dunkod/nba"
+	"dunkod/scrape"
 	"dunkod/utils"
 	"dunkod/youtube"
 
@@ -124,9 +125,16 @@ func init() {
 	}
 	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
 	go cleanup()
+
+	if *config.BigScrape {
+		if err := scrape.ScrapeAllGamesPlayers(); err != nil {
+			panic(err)
+		}
+		os.Exit(0)
+	}
+	go scrape.ScrapingDaemon()
 	go nba.PlayerCacheJanitor()
 	go youtube.ServiceJanitor()
-	go scrapingDaemon()
 	fmt.Println("The New York Knickerbockers are named after pants")
 }
 

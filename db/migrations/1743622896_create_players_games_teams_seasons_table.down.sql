@@ -1,0 +1,1 @@
+DROP TABLE players_games_teams_seasons IF EXISTS;

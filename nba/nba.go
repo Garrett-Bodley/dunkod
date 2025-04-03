@@ -9,30 +9,23 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"dunkod/utils"
-)
 
-func initNBAReq(url string) *http.Request {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Referer", "https://www.nba.com/")
-	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	return req
-}
+	"golang.org/x/time/rate"
+)
 
 var playerCacheMu = sync.Mutex{}
 var playerCache = map[string][]CommonAllPlayer{}
 
 type CommonAllPlayersResp struct {
 	ResultSets []struct {
-		RowSet [][]interface{} `json:"rowSet"`
+		Headers []string        `json:"headers"`
+		RowSet  [][]interface{} `json:"rowSet"`
 	} `json:"resultSets"`
 }
 
@@ -194,6 +187,68 @@ func (p CommonAllPlayer) ToJSON() CommonAllPlayerJSON {
 	return json
 }
 
+func CommonAllPlayerAllSeasons() ([]CommonAllPlayer, error) {
+	url := "https://stats.nba.com/stats/commonallplayers?LeagueID=00&Season=2024-25&IsOnlyCurrentSeason=0"
+	body, err := curl(url)
+	if err != nil {
+		return nil, err
+	}
+	unmarshalledBody := CommonAllPlayersResp{}
+	err = json.Unmarshal(body, &unmarshalledBody)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	expectedHeaders := []string{
+		"PERSON_ID",
+		"DISPLAY_LAST_COMMA_FIRST",
+		"DISPLAY_FIRST_LAST",
+		"ROSTERSTATUS",
+		"FROM_YEAR",
+		"TO_YEAR",
+		"PLAYERCODE",
+		"PLAYER_SLUG",
+		"TEAM_ID",
+		"TEAM_CITY",
+		"TEAM_NAME",
+		"TEAM_ABBREVIATION",
+		"TEAM_CODE",
+		"TEAM_SLUG",
+		"GAMES_PLAYED_FLAG",
+		"OTHERLEAGUE_EXPERIENCE_CH",
+	}
+
+	receivedHeaders := unmarshalledBody.ResultSets[0].Headers
+	if err := validateHeaders(expectedHeaders, receivedHeaders); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	players := make([]CommonAllPlayer, len(unmarshalledBody.ResultSets[0].RowSet))
+	for i, raw := range unmarshalledBody.ResultSets[0].RowSet {
+		player := CommonAllPlayer{
+			PersonID:                maybe[float64](raw[0]),
+			DisplayLastFirst:        maybe[string](raw[1]),
+			DisplayFirstLast:        maybe[string](raw[2]),
+			RosterStatus:            maybe[float64](raw[3]),
+			FromYear:                maybe[string](raw[4]),
+			ToYear:                  maybe[string](raw[5]),
+			PlayerCode:              maybe[string](raw[6]),
+			PlayerSlug:              maybe[string](raw[7]),
+			TeamID:                  maybe[float64](raw[8]),
+			TeamCity:                maybe[string](raw[9]),
+			TeamName:                maybe[string](raw[10]),
+			TeamAbbreviation:        maybe[string](raw[11]),
+			TeamCode:                maybe[string](raw[12]),
+			TeamSlug:                maybe[string](raw[13]),
+			GamesPlayedFlag:         maybe[string](raw[14]),
+			OtherLeagueExperienceCh: maybe[string](raw[15]),
+		}
+		// player.LogNilFields()
+		players[i] = player
+	}
+	return players, nil
+}
+
 func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
 	if utils.IsInvalidSeason(season) {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided: %s", season))
@@ -201,8 +256,6 @@ func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
 
 	url := fmt.Sprintf("https://stats.nba.com/stats/commonallplayers?LeagueID=00&Season=%s&IsOnlyCurrentSeason=1", season)
 	body, err := curl(url)
-	// req := initNBAReq(url)
-	// body, err := utils.Curl(req)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -242,7 +295,7 @@ func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
 // https://stats.nba.com/stats/leaguegamelog?Counter=0&Direction=DESC&LeagueID=00&PlayerOrTeam=T&Season=2024-25&SeasonType=Regular+Season&Sorter=DATE
 
 type LeagueGameLogResp struct {
-	ResultsSet []struct {
+	ResultSets []struct {
 		Headers []string        `json:"headers"`
 		RowSet  [][]interface{} `json:"rowSet"`
 	} `json:"resultSets"`
@@ -377,7 +430,7 @@ func (g *LeagueGameLogGame) LogNilFields() {
 	if g.Matchup != nil && g.GameDate != nil {
 		log.Printf("%s %s:\n\t%v", *g.Matchup, *g.GameDate, errors.Join(errs...))
 	} else if g.Matchup != nil {
-		log.Printf("%s %s:\n\t%v", *g.Matchup, errors.Join(errs...))
+		log.Printf("%s:\n\t%v", *g.Matchup, errors.Join(errs...))
 	} else if g.GameID != nil {
 		log.Printf("GameID: %s\n\t%v", *g.GameID, errors.Join(errs...))
 	} else {
@@ -395,19 +448,6 @@ func LeagueGameLog(season string, seasonType string) ([]LeagueGameLogGame, error
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	// req := initNBAReq(url)
-
-	// client := &http.Client{}
-	// resp, err := client.Do(req)
-	// if err != nil {
-	// 	return nil, utils.ErrorWithTrace(err)
-	// }
-	// defer resp.Body.Close()
-
-	// body, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	return nil, utils.ErrorWithTrace(err)
-	// }
 
 	unmarshalledBody := LeagueGameLogResp{}
 	err = json.Unmarshal(body, &unmarshalledBody)
@@ -447,18 +487,13 @@ func LeagueGameLog(season string, seasonType string) ([]LeagueGameLogGame, error
 		"VIDEO_AVAILABLE",
 	}
 
-	if len(expectedHeaders) != len(unmarshalledBody.ResultsSet[0].Headers) {
-		return nil, utils.ErrorWithTrace(fmt.Errorf("expected headers to be of length %d, found %d", len(expectedHeaders), len(unmarshalledBody.ResultsSet[0].Headers)))
+	receivedHeaders := unmarshalledBody.ResultSets[0].Headers
+	if err := validateHeaders(expectedHeaders, receivedHeaders); err != nil {
+		return nil, utils.ErrorWithTrace(err)
 	}
 
-	for i := range expectedHeaders {
-		if expectedHeaders[i] != unmarshalledBody.ResultsSet[0].Headers[i] {
-			return nil, utils.ErrorWithTrace(fmt.Errorf("uh oh! mismatched headers! expected %s, found %s", expectedHeaders[i], unmarshalledBody.ResultsSet[0].Headers[i]))
-		}
-	}
-	leagueGameLogGames := make([]LeagueGameLogGame, len(unmarshalledBody.ResultsSet[0].RowSet))
-
-	for i, raw := range unmarshalledBody.ResultsSet[0].RowSet {
+	leagueGameLogGames := make([]LeagueGameLogGame, len(unmarshalledBody.ResultSets[0].RowSet))
+	for i, raw := range unmarshalledBody.ResultSets[0].RowSet {
 		leagueGameLogGames[i] = LeagueGameLogGame{
 			SeasonID:         maybe[string](raw[0]),
 			TeamID:           maybe[float64](raw[1]),
@@ -743,8 +778,6 @@ var VideoDetailsAssetContextMeasures = struct {
 func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
 	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&ContextMeasure=%s&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameID=%s&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PlayerID=%s&PointDiff=&Position=&RangeType=&RookieYear=&Season=2024-25&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=", contextMeasure, gameID, playerID)
 	body, err := curl(url)
-	// req := initNBAReq(url)
-	// body, err := utils.Curl(req)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -784,6 +817,580 @@ func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAsset
 		res = append(res, entry)
 	}
 	return res, nil
+}
+
+type LeagueGameFinderByPlayerIDResp struct {
+	ResultsSet []struct {
+		Headers []string        `json:"headers"`
+		RowSet  [][]interface{} `json:"rowSet"`
+	} `json:"resultSets"`
+}
+
+type LeagueGameFinderGame struct {
+	SeasonID         *string
+	PlayerId         *float64
+	PlayerName       *string
+	TeamID           *float64
+	TeamAbbreviation *string
+	TeamName         *string
+	GameID           *string
+	GameDate         *string
+	Matchup          *string
+	WL               *string
+	MIN              *float64
+	PTS              *float64
+	FGM              *float64
+	FGA              *float64
+	FG_PCT           *float64
+	FG3M             *float64
+	FG3A             *float64
+	FG3_PCT          *float64
+	FTM              *float64
+	FTA              *float64
+	FT_PCT           *float64
+	OREB             *float64
+	DREB             *float64
+	REB              *float64
+	AST              *float64
+	STL              *float64
+	BLK              *float64
+	TOV              *float64
+	PF               *float64
+	PlusMinus        *float64
+}
+
+func (g *LeagueGameFinderGame) IsPreSeason() bool {
+	return strings.HasPrefix(*g.SeasonID, "1")
+}
+
+func (g *LeagueGameFinderGame) IsRegularSeason() bool {
+	return strings.HasPrefix(*g.SeasonID, "2")
+}
+
+func (g *LeagueGameFinderGame) IsAllStar() bool {
+	return strings.HasPrefix(*g.SeasonID, "3")
+}
+
+func (g *LeagueGameFinderGame) IsPlayoffs() bool {
+	return strings.HasPrefix(*g.SeasonID, "4")
+}
+
+func (g *LeagueGameFinderGame) IsPlayIn() bool {
+	return strings.HasPrefix(*g.SeasonID, "5")
+}
+
+func (g *LeagueGameFinderGame) IsIST() bool {
+	return strings.HasPrefix(*g.SeasonID, "6")
+}
+
+func LeagueGameFinderByPlayerIDAndSeason(playerID int, season string) ([]LeagueGameFinderGame, error) {
+	if utils.IsInvalidSeason(season) {
+		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided: %s", season))
+	}
+	url := fmt.Sprintf("https://stats.nba.com/stats/leaguegamefinder?PlayerOrTeam=P&LeagueID=00&PlayerID=%d&Season=%s", playerID, season)
+	return leagueGameFinder(url)
+}
+
+func LeagueGameFinderBySeason(season string) ([]LeagueGameFinderGame, error) {
+	if utils.IsInvalidSeason(season) {
+		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided: %s", season))
+	}
+	url := fmt.Sprintf("https://stats.nba.com/stats/leaguegamefinder?PlayerOrTeam=P&LeagueID=00&Season=%s", season)
+	return leagueGameFinder(url)
+}
+
+func leagueGameFinder(url string) ([]LeagueGameFinderGame, error) {
+	body, err := curl(url)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	unmarshalledBody := LeagueGameFinderByPlayerIDResp{}
+	if err := json.Unmarshal(body, &unmarshalledBody); err != nil {
+		return []LeagueGameFinderGame{}, err
+	}
+
+	expectedHeaders := []string{
+		"SEASON_ID",
+		"PLAYER_ID",
+		"PLAYER_NAME",
+		"TEAM_ID",
+		"TEAM_ABBREVIATION",
+		"TEAM_NAME",
+		"GAME_ID",
+		"GAME_DATE",
+		"MATCHUP",
+		"WL",
+		"MIN",
+		"PTS",
+		"FGM",
+		"FGA",
+		"FG_PCT",
+		"FG3M",
+		"FG3A",
+		"FG3_PCT",
+		"FTM",
+		"FTA",
+		"FT_PCT",
+		"OREB",
+		"DREB",
+		"REB",
+		"AST",
+		"STL",
+		"BLK",
+		"TOV",
+		"PF",
+		"PLUS_MINUS",
+	}
+	receivedHeaders := unmarshalledBody.ResultsSet[0].Headers
+	if err := validateHeaders(expectedHeaders, receivedHeaders); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	res := make([]LeagueGameFinderGame, len(unmarshalledBody.ResultsSet[0].RowSet))
+	for i, raw := range unmarshalledBody.ResultsSet[0].RowSet {
+		game := LeagueGameFinderGame{
+			SeasonID:         maybe[string](raw[0]),
+			PlayerId:         maybe[float64](raw[1]),
+			PlayerName:       maybe[string](raw[2]),
+			TeamID:           maybe[float64](raw[3]),
+			TeamAbbreviation: maybe[string](raw[4]),
+			TeamName:         maybe[string](raw[5]),
+			GameID:           maybe[string](raw[6]),
+			GameDate:         maybe[string](raw[7]),
+			Matchup:          maybe[string](raw[8]),
+			WL:               maybe[string](raw[9]),
+			MIN:              maybe[float64](raw[10]),
+			PTS:              maybe[float64](raw[11]),
+			FGM:              maybe[float64](raw[12]),
+			FGA:              maybe[float64](raw[13]),
+			FG_PCT:           maybe[float64](raw[14]),
+			FG3M:             maybe[float64](raw[15]),
+			FG3A:             maybe[float64](raw[16]),
+			FG3_PCT:          maybe[float64](raw[17]),
+			FTM:              maybe[float64](raw[18]),
+			FTA:              maybe[float64](raw[19]),
+			FT_PCT:           maybe[float64](raw[20]),
+			OREB:             maybe[float64](raw[21]),
+			DREB:             maybe[float64](raw[22]),
+			REB:              maybe[float64](raw[23]),
+			AST:              maybe[float64](raw[24]),
+			STL:              maybe[float64](raw[25]),
+			BLK:              maybe[float64](raw[26]),
+			TOV:              maybe[float64](raw[27]),
+			PF:               maybe[float64](raw[28]),
+			PlusMinus:        maybe[float64](raw[29]),
+		}
+		res[i] = game
+	}
+	return res, nil
+}
+
+type BoxScoreTraditionalV2Resp struct {
+	ResultsSet []BoxScoreTraditionalV2ResultsSet `json:"resultSets"`
+}
+
+type BoxScoreTraditionalV2ResultsSet struct {
+	Name    string          `json:"name"`
+	Headers []string        `json:"headers"`
+	RowSet  [][]interface{} `json:"rowSet"`
+}
+
+type BoxScoreTraditionalV2Data struct {
+	PlayerStats           []BoxScoreTraditionalV2PlayerStats
+	TeamStats             []BoxScoreTraditionalV2TeamStats
+	TeamStarterBenchStats []BoxScoreTraditionalV2TeamStarterBenchStats
+}
+
+type BoxScoreTraditionalV2PlayerStats struct {
+	GameID           *string
+	TeamId           *float64
+	TeamAbbreviation *string
+	TeamCity         *string
+	PlayerId         *float64
+	PlayerName       *string
+	Nickname         *string
+	StartPosition    *string
+	Comment          *string
+	MIN              *string
+	FGM              *float64
+	FGA              *float64
+	FG_PCT           *float64
+	FG3M             *float64
+	FG3A             *float64
+	FG3_PCT          *float64
+	FTM              *float64
+	FTA              *float64
+	FT_PCT           *float64
+	OREB             *float64
+	DREB             *float64
+	REB              *float64
+	AST              *float64
+	STL              *float64
+	BLK              *float64
+	TO               *float64
+	PF               *float64
+	PTS              *float64
+	PlusMinus        *float64
+}
+
+func (p *BoxScoreTraditionalV2PlayerStats) Minutes() (int, error) {
+	if p.MIN == nil {
+		return 0, nil
+	}
+	minString := strings.Split(*p.MIN, ":")[0]
+	minFloat, err := strconv.ParseFloat(minString, 64)
+	if err != nil {
+		return 0, utils.ErrorWithTrace(err)
+	}
+	return int(minFloat), nil
+}
+
+func (p *BoxScoreTraditionalV2PlayerStats) Seconds() (int, error) {
+	if p.MIN == nil {
+		return 0, nil
+	}
+	secString := strings.Split(*p.MIN, ":")[1]
+	secFloat, err := strconv.ParseFloat(secString, 64)
+	if err != nil {
+		return 0, utils.ErrorWithTrace(err)
+	}
+	return int(secFloat), nil
+}
+
+func (p *BoxScoreTraditionalV2PlayerStats) DidNotPlay() (bool, error) {
+	if p.MIN == nil {
+		return true, nil
+	}
+	splitMins := strings.Split(*p.MIN, ":")
+	if len(splitMins) != 2 {
+		return true, utils.ErrorWithTrace(fmt.Errorf("malformed MIN string: %s", *p.MIN))
+	}
+	minString, secString := splitMins[0], splitMins[1]
+	secFloat, err := strconv.ParseFloat(secString, 64)
+	if err != nil {
+		return true, utils.ErrorWithTrace(err)
+	}
+	minFloat, err := strconv.ParseFloat(minString, 64)
+	if err != nil {
+		return true, utils.ErrorWithTrace(err)
+	}
+	return secFloat == 0 && minFloat == 0, nil
+}
+
+type BoxScoreTraditionalV2TeamStats struct {
+	GameID           *string
+	TeamID           *float64
+	TeamName         *string
+	TeamAbbreviation *string
+	TeamCity         *string
+	MIN              *float64
+	FGM              *float64
+	FGA              *float64
+	FG_PCT           *float64
+	FG3M             *float64
+	FG3A             *float64
+	FG3_PCT          *float64
+	FTM              *float64
+	FTA              *float64
+	FT_PCT           *float64
+	OREB             *float64
+	DREB             *float64
+	REB              *float64
+	AST              *float64
+	STL              *float64
+	BLK              *float64
+	TO               *float64
+	PF               *float64
+	PTS              *float64
+	PlusMinus        *float64
+}
+
+type BoxScoreTraditionalV2TeamStarterBenchStats struct {
+	GameID           *string
+	TeamID           *float64
+	TeamName         *string
+	TeamAbbreviation *string
+	TeamCity         *string
+	StartersBench    *string
+	MIN              *float64
+	FGM              *float64
+	FGA              *float64
+	FG_PCT           *float64
+	FG3M             *float64
+	FG3A             *float64
+	FG3_PCT          *float64
+	FTM              *float64
+	FTA              *float64
+	FT_PCT           *float64
+	OREB             *float64
+	DREB             *float64
+	REB              *float64
+	AST              *float64
+	STL              *float64
+	BLK              *float64
+	TO               *float64
+	PF               *float64
+	PTS              *float64
+}
+
+func BoxScoreTraditionalV2(gameID string) (*BoxScoreTraditionalV2Data, error) {
+	url := fmt.Sprintf("https://stats.nba.com/stats/boxscoretraditionalv2?GameID=%s", gameID)
+	body, err := curl(url)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	if strings.Contains(string(body), "html") {
+		return nil, utils.ErrorWithTrace(fmt.Errorf("received response body containing html"))
+	}
+
+	unmarshalledBody := BoxScoreTraditionalV2Resp{}
+	if err := json.Unmarshal(body, &unmarshalledBody); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	boxScore := BoxScoreTraditionalV2Data{}
+
+	for _, set := range unmarshalledBody.ResultsSet {
+		switch set.Name {
+		case "PlayerStats":
+			playerStats, err := unmarshalBoxScorePlayerStats(set)
+			if err != nil {
+				return nil, utils.ErrorWithTrace(err)
+			}
+			boxScore.PlayerStats = playerStats
+		case "TeamStats":
+			teamStats, err := unmarshalBoxScoreTeamStats(set)
+			if err != nil {
+				return nil, utils.ErrorWithTrace(err)
+			}
+			boxScore.TeamStats = teamStats
+		case "TeamStarterBenchStats":
+			teamStarterBenchStats, err := unmarshalTeamStarterBenchStats(set)
+			if err != nil {
+				return nil, utils.ErrorWithTrace(err)
+			}
+			boxScore.TeamStarterBenchStats = teamStarterBenchStats
+		default:
+			return nil, utils.ErrorWithTrace(fmt.Errorf("invalid ResultsSet found: %v", set.Name))
+		}
+	}
+	return &boxScore, nil
+}
+
+func unmarshalBoxScorePlayerStats(set BoxScoreTraditionalV2ResultsSet) ([]BoxScoreTraditionalV2PlayerStats, error) {
+	expectedHeaders := []string{
+		"GAME_ID",
+		"TEAM_ID",
+		"TEAM_ABBREVIATION",
+		"TEAM_CITY",
+		"PLAYER_ID",
+		"PLAYER_NAME",
+		"NICKNAME",
+		"START_POSITION",
+		"COMMENT",
+		"MIN",
+		"FGM",
+		"FGA",
+		"FG_PCT",
+		"FG3M",
+		"FG3A",
+		"FG3_PCT",
+		"FTM",
+		"FTA",
+		"FT_PCT",
+		"OREB",
+		"DREB",
+		"REB",
+		"AST",
+		"STL",
+		"BLK",
+		"TO",
+		"PF",
+		"PTS",
+		"PLUS_MINUS",
+	}
+	if err := validateHeaders(expectedHeaders, set.Headers); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	playerStats := make([]BoxScoreTraditionalV2PlayerStats, len(set.RowSet))
+	for i, raw := range set.RowSet {
+		stats := BoxScoreTraditionalV2PlayerStats{
+			GameID:           maybe[string](raw[0]),
+			TeamId:           maybe[float64](raw[1]),
+			TeamAbbreviation: maybe[string](raw[2]),
+			TeamCity:         maybe[string](raw[3]),
+			PlayerId:         maybe[float64](raw[4]),
+			PlayerName:       maybe[string](raw[5]),
+			Nickname:         maybe[string](raw[6]),
+			StartPosition:    maybe[string](raw[7]),
+			Comment:          maybe[string](raw[8]),
+			MIN:              maybe[string](raw[9]),
+			FGM:              maybe[float64](raw[10]),
+			FGA:              maybe[float64](raw[11]),
+			FG_PCT:           maybe[float64](raw[12]),
+			FG3M:             maybe[float64](raw[13]),
+			FG3A:             maybe[float64](raw[14]),
+			FG3_PCT:          maybe[float64](raw[15]),
+			FTM:              maybe[float64](raw[16]),
+			FTA:              maybe[float64](raw[17]),
+			FT_PCT:           maybe[float64](raw[18]),
+			OREB:             maybe[float64](raw[19]),
+			DREB:             maybe[float64](raw[20]),
+			REB:              maybe[float64](raw[21]),
+			AST:              maybe[float64](raw[22]),
+			STL:              maybe[float64](raw[23]),
+			BLK:              maybe[float64](raw[24]),
+			TO:               maybe[float64](raw[25]),
+			PF:               maybe[float64](raw[26]),
+			PTS:              maybe[float64](raw[27]),
+			PlusMinus:        maybe[float64](raw[28]),
+		}
+		playerStats[i] = stats
+	}
+	return playerStats, nil
+}
+
+func unmarshalBoxScoreTeamStats(set BoxScoreTraditionalV2ResultsSet) ([]BoxScoreTraditionalV2TeamStats, error) {
+	expectedHeaders := []string{
+		"GAME_ID",
+		"TEAM_ID",
+		"TEAM_NAME",
+		"TEAM_ABBREVIATION",
+		"TEAM_CITY",
+		"MIN",
+		"FGM",
+		"FGA",
+		"FG_PCT",
+		"FG3M",
+		"FG3A",
+		"FG3_PCT",
+		"FTM",
+		"FTA",
+		"FT_PCT",
+		"OREB",
+		"DREB",
+		"REB",
+		"AST",
+		"STL",
+		"BLK",
+		"TO",
+		"PF",
+		"PTS",
+		"PLUS_MINUS",
+	}
+	if err := validateHeaders(expectedHeaders, set.Headers); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	teamStats := make([]BoxScoreTraditionalV2TeamStats, len(set.RowSet))
+	for i, raw := range set.RowSet {
+		stats := BoxScoreTraditionalV2TeamStats{
+			GameID:           maybe[string](raw[0]),
+			TeamID:           maybe[float64](raw[1]),
+			TeamName:         maybe[string](raw[2]),
+			TeamAbbreviation: maybe[string](raw[3]),
+			TeamCity:         maybe[string](raw[4]),
+			MIN:              maybe[float64](raw[5]),
+			FGM:              maybe[float64](raw[6]),
+			FGA:              maybe[float64](raw[7]),
+			FG_PCT:           maybe[float64](raw[8]),
+			FG3M:             maybe[float64](raw[9]),
+			FG3A:             maybe[float64](raw[10]),
+			FG3_PCT:          maybe[float64](raw[11]),
+			FTM:              maybe[float64](raw[12]),
+			FTA:              maybe[float64](raw[13]),
+			FT_PCT:           maybe[float64](raw[14]),
+			OREB:             maybe[float64](raw[15]),
+			DREB:             maybe[float64](raw[16]),
+			REB:              maybe[float64](raw[17]),
+			AST:              maybe[float64](raw[18]),
+			STL:              maybe[float64](raw[19]),
+			BLK:              maybe[float64](raw[20]),
+			TO:               maybe[float64](raw[21]),
+			PF:               maybe[float64](raw[22]),
+			PTS:              maybe[float64](raw[23]),
+			PlusMinus:        maybe[float64](raw[24]),
+		}
+		teamStats[i] = stats
+	}
+	return teamStats, nil
+}
+
+func unmarshalTeamStarterBenchStats(set BoxScoreTraditionalV2ResultsSet) ([]BoxScoreTraditionalV2TeamStarterBenchStats, error) {
+	expectedHeaders := []string{
+		"GAME_ID",
+		"TEAM_ID",
+		"TEAM_NAME",
+		"TEAM_ABBREVIATION",
+		"TEAM_CITY",
+		"STARTERS_BENCH",
+		"MIN",
+		"FGM",
+		"FGA",
+		"FG_PCT",
+		"FG3M",
+		"FG3A",
+		"FG3_PCT",
+		"FTM",
+		"FTA",
+		"FT_PCT",
+		"OREB",
+		"DREB",
+		"REB",
+		"AST",
+		"STL",
+		"BLK",
+		"TO",
+		"PF",
+		"PTS",
+	}
+	if err := validateHeaders(expectedHeaders, set.Headers); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	teamStarterBenchStats := make([]BoxScoreTraditionalV2TeamStarterBenchStats, len(set.RowSet))
+	for i, raw := range set.RowSet {
+		stats := BoxScoreTraditionalV2TeamStarterBenchStats{
+			GameID:           maybe[string](raw[0]),
+			TeamID:           maybe[float64](raw[1]),
+			TeamName:         maybe[string](raw[2]),
+			TeamAbbreviation: maybe[string](raw[3]),
+			TeamCity:         maybe[string](raw[4]),
+			StartersBench:    maybe[string](raw[5]),
+			MIN:              maybe[float64](raw[6]),
+			FGM:              maybe[float64](raw[7]),
+			FGA:              maybe[float64](raw[8]),
+			FG_PCT:           maybe[float64](raw[9]),
+			FG3M:             maybe[float64](raw[10]),
+			FG3A:             maybe[float64](raw[11]),
+			FG3_PCT:          maybe[float64](raw[12]),
+			FTM:              maybe[float64](raw[13]),
+			FTA:              maybe[float64](raw[14]),
+			FT_PCT:           maybe[float64](raw[15]),
+			OREB:             maybe[float64](raw[16]),
+			DREB:             maybe[float64](raw[17]),
+			REB:              maybe[float64](raw[18]),
+			AST:              maybe[float64](raw[19]),
+			STL:              maybe[float64](raw[20]),
+			BLK:              maybe[float64](raw[21]),
+			TO:               maybe[float64](raw[22]),
+			PF:               maybe[float64](raw[23]),
+			PTS:              maybe[float64](raw[24]),
+		}
+		teamStarterBenchStats[i] = stats
+	}
+	return teamStarterBenchStats, nil
+}
+
+func validateHeaders(expected, received []string) error {
+	if len(expected) != len(received) {
+		return (fmt.Errorf("expected headers to be of length %d, found %d", len(expected), len(received)))
+	}
+	for i := range expected {
+		if expected[i] != received[i] {
+			return (fmt.Errorf("uh oh! mismatched headers! expected %s, found %s", expected[i], received[i]))
+		}
+	}
+	return nil
 }
 
 func GetPlayersBySeason(season string) ([]CommonAllPlayer, error) {
@@ -831,20 +1438,35 @@ func PlayerCacheJanitor() {
 	}
 }
 
+var nbaClient = &http.Client{
+	Timeout: 15 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        25,
+		MaxIdleConnsPerHost: 25,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
+var sem = make(chan int, 25)
+var rateLimiter = rate.NewLimiter(rate.Limit(25), 3)
+
 func curl(url string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15 * time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	sem <- 1
+	defer func() { <-sem }()
+	if err := rateLimiter.Wait(context.Background()); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, utils.ErrorWithTrace(err)
 	}
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Referer", "https://www.nba.com/")
 	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := nbaClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, utils.ErrorWithTrace(err)
 	}
 	defer resp.Body.Close()
 

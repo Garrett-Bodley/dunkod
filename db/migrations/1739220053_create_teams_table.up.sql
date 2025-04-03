@@ -1,7 +1,7 @@
 CREATE TABLE
   IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY UNIQUE,
-    name TEXT NOT NULL,
+    team_name TEXT NOT NULL,
     city TEXT,
     abbreviation TEXT,
     conference TEXT,
@@ -25,7 +25,7 @@ WHERE
 END;
 
 INSERT
-OR IGNORE INTO teams (id, name)
+OR IGNORE INTO teams (id, team_name)
 VALUES
   (1610612737, 'Atlanta Hawks'),
   (1610612738, 'Boston Celtics'),
