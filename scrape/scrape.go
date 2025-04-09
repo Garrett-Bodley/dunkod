@@ -78,6 +78,11 @@ func scrapeGamesPlayersBySeason(season string) error {
 }
 
 func scrapeGamesPlayers(games []db.DatabaseGame) error {
+	log.Printf("querying %d box scores...", len(games))
+	if len(games) == 0 {
+		return nil
+	}
+
 	entries := make([]db.PlayersGamesTeamsSeasonsEntry, 0, 4096)
 	entryChan := make(chan *db.PlayersGamesTeamsSeasonsEntry, 100)
 	scrapingErrs := []db.BoxScoreScrapingError{}
@@ -87,14 +92,12 @@ func scrapeGamesPlayers(games []db.DatabaseGame) error {
 	limiter := rate.NewLimiter(rate.Limit(5), 3)
 	entryCount := atomic.Int64{}
 	errCount := atomic.Int64{}
-	log.Printf("querying %d box scores...", len(games))
-
 	go func() {
 		for err := range errChan {
 			resWg.Done()
 			entryInt := entryCount.Load()
 			errInt := errCount.Load()
-			fmt.Printf("Processed %d Entries, %d Errors     ", entryInt, errInt+1)
+			log.Printf("\tProcessed %d Entries, %d Errors     ", entryInt, errInt+1)
 			errCount.Add(1)
 			scrapingErrs = append(scrapingErrs, *err)
 		}
@@ -104,7 +107,7 @@ func scrapeGamesPlayers(games []db.DatabaseGame) error {
 			resWg.Done()
 			entryInt := entryCount.Load()
 			errInt := errCount.Load()
-			fmt.Printf("Processed %d Entries, %d Errors     ", entryInt+1, errInt)
+			log.Printf("\tProcessed %d Entries, %d Errors     ", entryInt+1, errInt)
 			entryCount.Add(1)
 			entries = append(entries, *entry)
 		}
@@ -153,8 +156,6 @@ func scrapeGamesPlayers(games []db.DatabaseGame) error {
 	close(entryChan)
 	close(errChan)
 	resWg.Wait()
-	// // We are done logging progress so let's print a new line
-	// fmt.Printf("\n")
 	entryErr := db.InsertPlayersGamesTeamsSeasonsEntries(entries)
 	if entryErr != nil {
 		entryErr = utils.ErrorWithTrace(entryErr)

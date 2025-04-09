@@ -525,7 +525,7 @@ func LeagueGameLog(season string, seasonType string) ([]LeagueGameLogGame, error
 			PlusMinus:        maybe[float64](raw[27]),
 			VideoAvailable:   maybe[float64](raw[28]),
 		}
-		leagueGameLogGames[i].LogNilFields()
+		// leagueGameLogGames[i].LogNilFields()
 	}
 
 	return leagueGameLogGames, nil
