@@ -4,11 +4,12 @@ package youtube
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"time"
 	"os"
 	"sync"
+	"time"
 
 	"dunkod/config"
 	"dunkod/utils"
@@ -27,8 +28,6 @@ var secretMu = sync.Mutex{}
 var service *youtube.Service
 var serviceMut = sync.RWMutex{}
 
-// getClient uses a Context and Config to retrieve a Token
-// then generate a Client. It returns the generated Client.
 func GetClient(ctx context.Context, oauthConfig *oauth2.Config) (*http.Client, error) {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()
@@ -88,9 +87,14 @@ func GetToken(oauthConfig *oauth2.Config) (*oauth2.Token, error) {
 		tokenSource := oauthConfig.TokenSource(context.Background(), token)
 		newTok, err := tokenSource.Token()
 		if err != nil {
-			return nil, utils.ErrorWithTrace(err)
-		}
-		if newTok.AccessToken != token.AccessToken {
+			token, err2 := getTokenFromWeb(oauthConfig)
+			if err2 != nil {
+				return nil, errors.Join(err, err2)
+			}
+			if err := saveToken(config.TokenFile, token); err != nil {
+				return nil, utils.ErrorWithTrace(err)
+			}
+		} else if newTok.AccessToken != token.AccessToken {
 			if err := saveToken(config.TokenFile, token); err != nil {
 				return nil, utils.ErrorWithTrace(err)
 			}
@@ -100,8 +104,6 @@ func GetToken(oauthConfig *oauth2.Config) (*oauth2.Token, error) {
 	return token, nil
 }
 
-// getTokenFromWeb uses Config to request a Token.
-// It returns the retrieved Token.
 func getTokenFromWeb(oauthConfig *oauth2.Config) (*oauth2.Token, error) {
 	authURL := oauthConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 	fmt.Printf("Go to the following link in your browser then type the "+
@@ -119,8 +121,6 @@ func getTokenFromWeb(oauthConfig *oauth2.Config) (*oauth2.Token, error) {
 	return tok, nil
 }
 
-// tokenFromFile retrieves a Token from a given file path.
-// It returns the retrieved Token and any read error encountered.
 func tokenFromFile(file string) (*oauth2.Token, error) {
 	f, err := os.Open(file)
 	if err != nil {
@@ -172,8 +172,6 @@ func UploadFile(filepath, title, description string, tags []string) (string, err
 		return "", utils.ErrorWithTrace(err)
 	}
 	defer file.Close()
-
-	// Create the video snippet
 	snippet := &youtube.VideoSnippet{
 		Title:       title,
 		Description: description,
@@ -181,7 +179,6 @@ func UploadFile(filepath, title, description string, tags []string) (string, err
 		Tags:        tags,
 	}
 
-	// Set the privacy status
 	status := &youtube.VideoStatus{
 		PrivacyStatus:           "public",
 		MadeForKids:             false,
@@ -202,15 +199,19 @@ func UploadFile(filepath, title, description string, tags []string) (string, err
 	return fmt.Sprintf("https://www.youtube.com/embed/%s", resp.Id), nil
 }
 
-func ServiceJanitor() {
+func InitService() error {
 	var err error
-
 	serviceMut.Lock()
+	defer serviceMut.Unlock()
 	service, err = GetService()
 	if err != nil {
-		panic(err)
+		return utils.ErrorWithTrace(err)
 	}
-	serviceMut.Unlock()
+	return nil
+}
+
+func ServiceJanitor() {
+	var err error
 
 	ticker := time.NewTicker(8 * time.Hour)
 	for range ticker.C {

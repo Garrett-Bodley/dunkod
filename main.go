@@ -126,6 +126,9 @@ func init() {
 	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
 	go cleanup()
 
+	if err := youtube.InitService(); err != nil {
+		panic(err)
+	}
 	if *config.BigScrape {
 		if err := scrape.BigScrape(); err != nil {
 			panic(err)
