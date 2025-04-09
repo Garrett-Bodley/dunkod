@@ -1034,7 +1034,7 @@ type BoxScoreTraditionalV2PlayerStats struct {
 	PlusMinus        *float64
 }
 
-func (p *BoxScoreTraditionalV2PlayerStats) Minutes() (int, error) {
+func (p *BoxScoreTraditionalV2PlayerStats) Minutes() (float64, error) {
 	if p.MIN == nil {
 		return 0, nil
 	}
@@ -1043,10 +1043,10 @@ func (p *BoxScoreTraditionalV2PlayerStats) Minutes() (int, error) {
 	if err != nil {
 		return 0, utils.ErrorWithTrace(err)
 	}
-	return int(minFloat), nil
+	return minFloat, nil
 }
 
-func (p *BoxScoreTraditionalV2PlayerStats) Seconds() (int, error) {
+func (p *BoxScoreTraditionalV2PlayerStats) Seconds() (float64, error) {
 	if p.MIN == nil {
 		return 0, nil
 	}
@@ -1055,7 +1055,7 @@ func (p *BoxScoreTraditionalV2PlayerStats) Seconds() (int, error) {
 	if err != nil {
 		return 0, utils.ErrorWithTrace(err)
 	}
-	return int(secFloat), nil
+	return secFloat, nil
 }
 
 func (p *BoxScoreTraditionalV2PlayerStats) DidNotPlay() (bool, error) {
