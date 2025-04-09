@@ -220,9 +220,12 @@ func (g DatabaseGame) ToString() string {
 	}
 }
 
-func InsertGames(games []DatabaseGame) error {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func InsertGames(games []DatabaseGame, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -255,9 +258,12 @@ func InsertGames(games []DatabaseGame) error {
 	return nil
 }
 
-func SelectAllGames() ([]DatabaseGame, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectAllGames(timeout ...time.Duration) ([]DatabaseGame, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -272,12 +278,15 @@ func SelectAllGames() ([]DatabaseGame, error) {
 	return games, nil
 }
 
-func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
+func SelectGamesBySeason(season string, timeout ...time.Duration) ([]DatabaseGame, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 	if utils.IsInvalidSeason(season) {
 		return nil, fmt.Errorf("invalid season provided: %s", season)
 	}
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -297,9 +306,12 @@ func SelectGamesBySeason(season string) ([]DatabaseGame, error) {
 	return games, nil
 }
 
-func SelectGamesPastNDays(n int) ([]DatabaseGame, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectGamesPastNDays(n int, timeout ...time.Duration) ([]DatabaseGame, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -324,9 +336,12 @@ func SelectGamesPastNDays(n int) ([]DatabaseGame, error) {
 	return games, nil
 }
 
-func SelectGamesById(ids []string) ([]DatabaseGame, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectGamesById(ids []string, timeout ...time.Duration) ([]DatabaseGame, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -355,9 +370,12 @@ func SelectGamesById(ids []string) ([]DatabaseGame, error) {
 	return games, nil
 }
 
-func SelectAllGamesWithScrapingErrors() ([]DatabaseGame, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectAllGamesWithScrapingErrors(timeout ...time.Duration) ([]DatabaseGame, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -393,9 +411,12 @@ func NewPlayer(id int, name string) *Player {
 	}
 }
 
-func InsertPlayers(players []Player) error {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func InsertPlayers(players []Player, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -423,9 +444,12 @@ func InsertPlayers(players []Player) error {
 	return nil
 }
 
-func SelectAllPlayers() ([]Player, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectAllPlayers(timeout ...time.Duration) ([]Player, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -480,9 +504,12 @@ func NewPlayersGamesTeamsSeasonsEntry(playerID, teamID int, gameID, season strin
 	}
 }
 
-func InsertPlayersGamesTeamsSeasonsEntries(entries []PlayersGamesTeamsSeasonsEntry) error {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func InsertPlayersGamesTeamsSeasonsEntries(entries []PlayersGamesTeamsSeasonsEntry, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -556,9 +583,12 @@ func (j *Job) OhNo(e error) error {
 	return UpdateJob(j)
 }
 
-func InsertJob(job *Job) (*Job, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func InsertJob(job *Job, timeout ...time.Duration) (*Job, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -623,9 +653,12 @@ func InsertJob(job *Job) (*Job, error) {
 	return job, nil
 }
 
-func SelectJobBySlug(slug string) (*Job, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectJobBySlug(slug string, timeout ...time.Duration) (*Job, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -641,9 +674,12 @@ func SelectJobBySlug(slug string) (*Job, error) {
 	return &job, nil
 }
 
-func SelectJobForUpdate() (*Job, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectJobForUpdate(timeout ...time.Duration) (*Job, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -673,9 +709,12 @@ func SelectJobForUpdate() (*Job, error) {
 	return &job, nil
 }
 
-func UpdateJob(job *Job) error {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func UpdateJob(job *Job, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -715,9 +754,12 @@ func NewVideo(title, description, url string, jobId int) *Video {
 	}
 }
 
-func InsertVideo(video *Video) error {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func InsertVideo(video *Video, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -744,9 +786,12 @@ func InsertVideo(video *Video) error {
 	return nil
 }
 
-func SelectVideoByJobId(id int) (*Video, error) {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func SelectVideoByJobId(id int, timeout ...time.Duration) (*Video, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
@@ -779,9 +824,12 @@ func NewBoxScoreScrapingError(gameID, errorDetails string) *BoxScoreScrapingErro
 	}
 }
 
-func InsertBoxScoreScrapingErrors(errors []BoxScoreScrapingError) error {
-	timeout := 5 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func InsertBoxScoreScrapingErrors(errors []BoxScoreScrapingError, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
@@ -1029,4 +1077,16 @@ func batchInsert[T any](tx *sqlx.Tx, ctx *context.Context, batchSize int, query 
 		}
 	}
 	return nil
+}
+
+const DEFAULT_TIMEOUT time.Duration = 5 * time.Second
+
+func parseTimeout(timeout ...time.Duration) (time.Duration, error) {
+	if len(timeout) == 0 {
+		return DEFAULT_TIMEOUT, nil
+	}
+	if len(timeout) > 1 {
+		return 0, utils.ErrorWithTrace(fmt.Errorf("expected single timeout value, received %d", len(timeout)))
+	}
+	return timeout[0], nil
 }
