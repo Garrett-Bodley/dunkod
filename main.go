@@ -127,7 +127,7 @@ func init() {
 	go cleanup()
 
 	if *config.BigScrape {
-		if err := scrape.ScrapeAllGamesPlayers(); err != nil {
+		if err := scrape.BigScrape(); err != nil {
 			panic(err)
 		}
 		os.Exit(0)

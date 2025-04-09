@@ -464,9 +464,9 @@ func SelectAllPlayers(timeout ...time.Duration) ([]Player, error) {
 	return players, nil
 }
 
-// func SelectAllPlayersBySeason(season string) ([]Player, error) {
-// 	timeout := 5 * time.Second
-// 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// func SelectPlayersBySeason(season string, timeout ...time.Duration) ([]Player, error) {
+// 	parsedTimeout := parseTimeout(timeout...)
+// 	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 // 	defer cancel()
 
 // 	tx, err := dbRO.Beginx()
@@ -482,29 +482,74 @@ func SelectAllPlayers(timeout ...time.Duration) ([]Player, error) {
 // 		WHERE pgts.
 // 	`
 // 	players := []Player{}
-// 	if err := selekt(tx, &ctx, )
+// 	if err := selekt(tx, &ctx, &players, query)
 // }
 
-type PlayersGamesTeamsSeasonsEntry struct {
+type BoxScorePlayerStat struct {
 	Id        int       `db:"id"`
 	PlayerID  int       `db:"player_id"`
 	TeamID    int       `db:"team_id"`
 	GameID    string    `db:"game_id"`
 	Season    string    `db:"season"`
+	MIN       *string   `db:"min"`
+	FGM       *float64  `db:"fgm"`
+	FGA       *float64  `db:"fga"`
+	FG_PCT    *float64  `db:"fg_pct"`
+	FG3M      *float64  `db:"fg3m"`
+	FG3A      *float64  `db:"fg3a"`
+	FG3_PCT   *float64  `db:"fg3_pct"`
+	FTM       *float64  `db:"ftm"`
+	FTA       *float64  `db:"fta"`
+	FT_PCT    *float64  `db:"ft_pct"`
+	OREB      *float64  `db:"oreb"`
+	DREB      *float64  `db:"dreb"`
+	REB       *float64  `db:"reb"`
+	AST       *float64  `db:"ast"`
+	STL       *float64  `db:"stl"`
+	BLK       *float64  `db:"blk"`
+	TOV       *float64  `db:"tov"`
+	PF        *float64  `db:"pf"`
+	PTS       *float64  `db:"pts"`
+	PlusMinus *float64  `db:"plus_minus"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
-func NewPlayersGamesTeamsSeasonsEntry(playerID, teamID int, gameID, season string) *PlayersGamesTeamsSeasonsEntry {
-	return &PlayersGamesTeamsSeasonsEntry{
-		PlayerID: playerID,
-		TeamID:   teamID,
-		GameID:   gameID,
-		Season:   season,
+func NewBoxScorePlayerStat(
+	playerID, teamID int,
+	gameID, season string,
+	min *string,
+	fgm, fga, fg_pct, fg3m, fg3a, fg3_pct, ftm, fta, ft_pct, oreb, dreb, reb, ast, stl, blk, tov, pf, pts, plusMinus *float64,
+) *BoxScorePlayerStat {
+	return &BoxScorePlayerStat{
+		PlayerID:  playerID,
+		TeamID:    teamID,
+		GameID:    gameID,
+		Season:    season,
+		MIN:       min,
+		FGM:       fgm,
+		FGA:       fga,
+		FG_PCT:    fg_pct,
+		FG3M:      fg3m,
+		FG3A:      fg3a,
+		FG3_PCT:   fg3_pct,
+		FTM:       ftm,
+		FTA:       fta,
+		FT_PCT:    ft_pct,
+		OREB:      oreb,
+		DREB:      dreb,
+		REB:       reb,
+		AST:       ast,
+		STL:       stl,
+		BLK:       blk,
+		TOV:       tov,
+		PF:        pf,
+		PTS:       pts,
+		PlusMinus: plusMinus,
 	}
 }
 
-func InsertPlayersGamesTeamsSeasonsEntries(entries []PlayersGamesTeamsSeasonsEntry, timeout ...time.Duration) error {
+func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Duration) error {
 	parsedTimeout, err := parseTimeout(timeout...)
 	if err != nil {
 		return utils.ErrorWithTrace(err)
@@ -518,14 +563,66 @@ func InsertPlayersGamesTeamsSeasonsEntries(entries []PlayersGamesTeamsSeasonsEnt
 	}
 	defer tx.Rollback()
 	query := `
-		INSERT OR IGNORE INTO players_games_teams_seasons (
-			player_id, team_id, game_id, season
-		) VALUES (
-			:player_id, :team_id, :game_id, :season
+		INSERT
+		or     IGNORE
+		into   box_score_player_stats
+		(
+			player_id,
+			team_id,
+			game_id,
+			season,
+			min,
+			fgm,
+			fga,
+			fg_pct,
+			fg3m,
+			fg3a,
+			fg3_pct,
+			ftm,
+			fta,
+			ft_pct,
+			oreb,
+			dreb,
+			reb,
+			ast,
+			stl,
+			blk,
+			tov,
+			pf,
+			pts,
+			plus_minus
+		)
+		VALUES
+		(
+			:player_id,
+			:team_id,
+			:game_id,
+			:season,
+			:min,
+			:fgm,
+			:fga,
+			:fg_pct,
+			:fg3m,
+			:fg3a,
+			:fg3_pct,
+			:ftm,
+			:fta,
+			:ft_pct,
+			:oreb,
+			:dreb,
+			:reb,
+			:ast,
+			:stl,
+			:blk,
+			:tov,
+			:pf,
+			:pts,
+			:plus_minus
 		);
 	`
+
 	batchSize := 1
-	if err := batchInsert(tx, &ctx, batchSize, query, entries); err != nil {
+	if err := batchInsert(tx, &ctx, batchSize, query, stats); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := commitTx(tx, &ctx); err != nil {

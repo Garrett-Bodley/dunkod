@@ -52,10 +52,27 @@ func Scrape() error {
 	return nil
 }
 
-func ScrapeAllGamesPlayers() error {
+func BigScrape() error {
+	log.Println("Scraping All Games")
+	if err := scrapeAllGames(); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	log.Println("Scraping All Players")
+	if err := scrapeAllPlayers(); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	log.Printf("Scraping all Box Scores")
+	if err := ScrapeAllBoxScores(); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	log.Println("Finished Scraping")
+	return nil
+}
+
+func ScrapeAllBoxScores() error {
 	for _, s := range config.ValidSeasons {
 		log.Println(s)
-		if err := scrapeGamesPlayersBySeason(s); err != nil {
+		if err := scrapeBoxScoresBySeason(s); err != nil {
 			log.Println(err)
 		}
 		time.Sleep(10 * time.Second)
@@ -63,7 +80,7 @@ func ScrapeAllGamesPlayers() error {
 	return nil
 }
 
-func scrapeGamesPlayersBySeason(season string) error {
+func scrapeBoxScoresBySeason(season string) error {
 	if utils.IsInvalidSeason(season) {
 		return utils.ErrorWithTrace(fmt.Errorf("invalid season provided: %s", season))
 	}
@@ -71,20 +88,20 @@ func scrapeGamesPlayersBySeason(season string) error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeGamesPlayers(games); err != nil {
+	if err := scrapeBoxScores(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
 }
 
-func scrapeGamesPlayers(games []db.DatabaseGame) error {
+func scrapeBoxScores(games []db.DatabaseGame) error {
 	log.Printf("querying %d box scores...", len(games))
 	if len(games) == 0 {
 		return nil
 	}
 
-	entries := make([]db.PlayersGamesTeamsSeasonsEntry, 0, 4096)
-	entryChan := make(chan *db.PlayersGamesTeamsSeasonsEntry, 100)
+	playerStats := make([]db.BoxScorePlayerStat, 0, 4096)
+	statChan := make(chan *db.BoxScorePlayerStat, 100)
 	scrapingErrs := []db.BoxScoreScrapingError{}
 	errChan := make(chan *db.BoxScoreScrapingError, 100)
 	gameWg := sync.WaitGroup{}
@@ -103,13 +120,13 @@ func scrapeGamesPlayers(games []db.DatabaseGame) error {
 		}
 	}()
 	go func() {
-		for entry := range entryChan {
+		for playerStat := range statChan {
 			resWg.Done()
 			entryInt := entryCount.Load()
 			errInt := errCount.Load()
 			log.Printf("\tProcessed %d Entries, %d Errors     ", entryInt+1, errInt)
 			entryCount.Add(1)
-			entries = append(entries, *entry)
+			playerStats = append(playerStats, *playerStat)
 		}
 	}()
 
@@ -146,17 +163,42 @@ func scrapeGamesPlayers(games []db.DatabaseGame) error {
 					errChan <- scrapingErr
 					continue
 				}
-				entry := db.NewPlayersGamesTeamsSeasonsEntry(int(*p.PlayerId), int(*p.TeamId), g.ID, g.Season)
+				playerStat := db.NewBoxScorePlayerStat(
+					int(*p.PlayerId),
+					int(*p.TeamId),
+					*p.GameID,
+					g.Season,
+					p.MIN,
+					p.FGM,
+					p.FGA,
+					p.FG_PCT,
+					p.FG3M,
+					p.FG3A,
+					p.FG3_PCT,
+					p.FTM,
+					p.FTA,
+					p.FT_PCT,
+					p.OREB,
+					p.DREB,
+					p.REB,
+					p.AST,
+					p.STL,
+					p.BLK,
+					p.TO,
+					p.PF,
+					p.PTS,
+					p.PlusMinus,
+				)
 				resWg.Add(1)
-				entryChan <- entry
+				statChan <- playerStat
 			}
 		}()
 	}
 	gameWg.Wait()
-	close(entryChan)
+	close(statChan)
 	close(errChan)
 	resWg.Wait()
-	entryErr := db.InsertPlayersGamesTeamsSeasonsEntries(entries)
+	entryErr := db.InsertBoxScorePlayerStats(playerStats)
 	if entryErr != nil {
 		entryErr = utils.ErrorWithTrace(entryErr)
 	}
@@ -170,30 +212,12 @@ func scrapeGamesPlayers(games []db.DatabaseGame) error {
 	return nil
 }
 
-func scrapePlayerGames(playerID int) ([]db.PlayersGamesTeamsSeasonsEntry, error) {
-	entries := []db.PlayersGamesTeamsSeasonsEntry{}
-	for _, s := range config.ValidSeasons {
-		games, err := nba.LeagueGameFinderByPlayerIDAndSeason(playerID, s)
-		if err != nil {
-			return nil, utils.ErrorWithTrace(err)
-		}
-		for _, g := range games {
-			if g.IsRegularSeason() || g.IsPlayIn() || g.IsPlayoffs() {
-				log.Println(g.SeasonID)
-				entry := db.NewPlayersGamesTeamsSeasonsEntry(playerID, int(*g.TeamID), *g.GameID, s)
-				entries = append(entries, *entry)
-			}
-		}
-	}
-	return entries, nil
-}
-
 func rescrapeLastNGameBoxScores(n int) error {
-	games, err := db.SelectGamesPastNDays(3)
+	games, err := db.SelectGamesPastNDays(n)
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeGamesPlayers(games); err != nil {
+	if err := scrapeBoxScores(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -204,7 +228,7 @@ func rescrapeBoxScoreErrors() error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeGamesPlayers(games); err != nil {
+	if err := scrapeBoxScores(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
