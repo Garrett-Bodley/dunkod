@@ -210,10 +210,10 @@ func InitService() error {
 	return nil
 }
 
-func ServiceJanitor() {
+func ServiceJanitor(duration time.Duration) {
 	var err error
 
-	ticker := time.NewTicker(8 * time.Hour)
+	ticker := time.NewTicker(duration)
 	for range ticker.C {
 		serviceMut.Lock()
 		service, err = GetService()

@@ -13,4 +13,5 @@ SET
   updated_at = datetime ('now', 'localtime')
 WHERE
   id = NEW.id;
+
 END;

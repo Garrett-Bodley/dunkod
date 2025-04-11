@@ -25,10 +25,7 @@ var dbRW *sqlx.DB
 var dbRO *sqlx.DB
 
 func Close() error {
-	timeout := 15 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return errors.Join(walCheckpoint(&ctx), dbRW.Close(), dbRO.Close())
+	return errors.Join(dbRW.Close(), dbRO.Close())
 }
 
 func SetupDatabase() error {
@@ -129,33 +126,6 @@ func RunMigrations() error {
 	}
 	if sourceErr, destErr := m.Close(); sourceErr != nil || destErr != nil {
 		return utils.ErrorWithTrace(errors.Join(sourceErr, destErr))
-	}
-	return nil
-}
-
-func ValidateMigrations() error {
-	var count int
-	if err := dbRO.QueryRow("SELECT COUNT(*) FROM teams;").Scan(&count); err != nil {
-		return utils.ErrorWithTrace(err)
-	}
-
-	if count != 31 {
-		return utils.ErrorWithTrace(fmt.Errorf("expected 31 teams, found %d", count))
-	}
-
-	var name string
-	if err := dbRO.QueryRow("SELECT team_name FROM teams WHERE id = 1610612752;").Scan(&name); err != nil {
-		return utils.ErrorWithTrace(fmt.Errorf("failed to find Knicks: %v", err))
-	}
-	if name != "New York Knicks" {
-		return utils.ErrorWithTrace(fmt.Errorf("expected team.id 1610612752 to have name 'New York Knicks', got '%s'", name))
-	}
-	err := dbRO.QueryRow("SELECT team_name FROM teams WHERE id = 0;").Scan(&name)
-	if err != nil {
-		return utils.ErrorWithTrace(fmt.Errorf("failed to find NULL_TEAM: %v", err))
-	}
-	if name != "NULL_TEAM" {
-		return utils.ErrorWithTrace(fmt.Errorf("expected team.id 0 to have name 'NULL_TEAM', got '%s'", name))
 	}
 	return nil
 }
@@ -275,6 +245,9 @@ func SelectAllGames(timeout ...time.Duration) ([]DatabaseGame, error) {
 	if err := selekt(tx, &ctx, &games, "SELECT * FROM games ORDER BY game_date DESC;"); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	if err := tx.Commit(); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 	return games, nil
 }
 
@@ -370,7 +343,7 @@ func SelectGamesById(ids []string, timeout ...time.Duration) ([]DatabaseGame, er
 	return games, nil
 }
 
-func SelectAllGamesWithScrapingErrors(timeout ...time.Duration) ([]DatabaseGame, error) {
+func SelectAllGamesWithPendingScrapingErrors(timeout ...time.Duration) ([]DatabaseGame, error) {
 	parsedTimeout, err := parseTimeout(timeout...)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -385,13 +358,17 @@ func SelectAllGamesWithScrapingErrors(timeout ...time.Duration) ([]DatabaseGame,
 	defer tx.Rollback()
 
 	query := `
-		SELECT g.*
-		FROM   games g
-		INNER JOIN box_score_scraping_errors screrrors
-			ON g.id = screrrors.game_id;
+		SELECT	g.*
+		FROM	games g
+			INNER JOIN box_score_scraping_errors screrrors
+				ON g.id = screrrors.game_id
+		WHERE	screrrors.error_status = 'PENDING';
 	`
 	games := []DatabaseGame{}
 	if err := selekt(tx, &ctx, &games, query); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	return games, nil
@@ -461,29 +438,70 @@ func SelectAllPlayers(timeout ...time.Duration) ([]Player, error) {
 	if err := selekt(tx, &ctx, &players, "SELECT * FROM players;"); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	if err := commitTx(tx, &ctx); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 	return players, nil
 }
 
-// func SelectPlayersBySeason(season string, timeout ...time.Duration) ([]Player, error) {
-// 	parsedTimeout := parseTimeout(timeout...)
-// 	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
-// 	defer cancel()
+func SelectPlayersBySeason(season string, timeout ...time.Duration) ([]Player, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
 
-// 	tx, err := dbRO.Beginx()
-// 	defer tx.Rollback()
-// 	if err != nil {
-// 		return nil, utils.ErrorWithTrace(err)
-// 	}
+	tx, err := dbRO.Beginx()
+	defer tx.Rollback()
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 
-// 	query = `
-// 		SELECT p.*
-// 		FROM players
-// 		INNER JOIN players_games_teams_seasons pgts ON p.id = pgts.player_id
-// 		WHERE pgts.
-// 	`
-// 	players := []Player{}
-// 	if err := selekt(tx, &ctx, &players, query)
-// }
+	query := `
+		SELECT p.*
+		FROM   players
+		INNER JOIN box_score_player_stats bsps
+			ON p.id = bsps.player_id
+		WHERE  bsps.season = ?
+	`
+	players := []Player{}
+	if err := selekt(tx, &ctx, &players, query, season); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	return players, nil
+}
+
+func SelectPlayerNamesById(ids []string, timeout ...time.Duration) ([]string, error) {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
+
+	tx, err := dbRO.Beginx()
+	defer tx.Rollback()
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	query := `
+		SELECT player_name FROM players WHERE id IN (?);
+	`
+	query, args, err := sqlx.In(query, ids)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	names := []string{}
+	if err := selekt(tx, &ctx, &names, query, args...); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	return names, nil
+}
 
 type BoxScorePlayerStat struct {
 	Id        int       `db:"id"`
@@ -621,14 +639,11 @@ func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Durat
 		);
 	`
 
-	batchSize := 1
+	batchSize := 500
 	if err := batchInsert(tx, &ctx, batchSize, query, stats); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := commitTx(tx, &ctx); err != nil {
-		return utils.ErrorWithTrace(err)
-	}
-	if err := walCheckpoint(&ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -737,9 +752,6 @@ func InsertJob(job *Job, timeout ...time.Duration) (*Job, error) {
 	if err := commitTx(tx, &ctx); err != nil {
 		return nil, err
 	}
-	if err := walCheckpoint(&ctx); err != nil {
-		return nil, utils.ErrorWithTrace(err)
-	}
 	tx, err = dbRO.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -766,6 +778,9 @@ func SelectJobBySlug(slug string, timeout ...time.Duration) (*Job, error) {
 
 	var job Job
 	if err := get(tx, &ctx, &job, "SELECT * from jobs where slug = ?;", slug); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	return &job, nil
@@ -800,9 +815,6 @@ func SelectJobForUpdate(timeout ...time.Duration) (*Job, error) {
 	if err := commitTx(tx, &ctx); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	if err := walCheckpoint(&ctx); err != nil {
-		return nil, utils.ErrorWithTrace(err)
-	}
 	return &job, nil
 }
 
@@ -826,7 +838,43 @@ func UpdateJob(job *Job, timeout ...time.Duration) error {
 	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := walCheckpoint(&ctx); err != nil {
+	return nil
+}
+
+func ResetStaleJobs(timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
+	tx, err := dbRW.Beginx()
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	defer tx.Rollback()
+
+	query := `
+		UPDATE jobs
+		SET job_state = CASE
+				WHEN job_state = 'PROCESSING'
+					AND Datetime(updated_at) < Datetime('now', '-5 minutes') THEN
+					'PENDING'
+				WHEN job_state = 'DOWNLOADING CLIPS'
+					AND Datetime(updated_at) < Datetime('now', '-10 minutes') THEN
+					'PENDING'
+				WHEN job_state = 'UPLOADING'
+					AND Datetime(updated_at) < Datetime('now', '-60 minutes') THEN
+					'PENDING'
+				ELSE
+					job_state
+				END
+		WHERE job_state IN ( 'PROCESSING', 'DOWNLOADING CLIPS', 'UPLOADING' );
+	`
+	if err := exec(tx, &ctx, query); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -877,9 +925,6 @@ func InsertVideo(video *Video, timeout ...time.Duration) error {
 	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := walCheckpoint(&ctx); err != nil {
-		return utils.ErrorWithTrace(err)
-	}
 	return nil
 }
 
@@ -903,6 +948,9 @@ func SelectVideoByJobId(id int, timeout ...time.Duration) (*Video, error) {
 			return nil, utils.ErrorWithTrace(err)
 		}
 	}
+	if err := commitTx(tx, &ctx); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 	return &res, nil
 }
 
@@ -910,6 +958,7 @@ type BoxScoreScrapingError struct {
 	Id           int       `db:"id"`
 	GameID       string    `db:"game_id"`
 	ErrorDetails string    `db:"error_details"`
+	ErrorStatus  string    `db:"error_status"`
 	CreatedAt    time.Time `db:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at"`
 }
@@ -918,6 +967,7 @@ func NewBoxScoreScrapingError(gameID, errorDetails string) *BoxScoreScrapingErro
 	return &BoxScoreScrapingError{
 		GameID:       gameID,
 		ErrorDetails: errorDetails,
+		ErrorStatus:  "PENDING",
 	}
 }
 
@@ -937,9 +987,9 @@ func InsertBoxScoreScrapingErrors(errors []BoxScoreScrapingError, timeout ...tim
 
 	query := `
 		INSERT INTO box_score_scraping_errors (
-			game_id, error_details
+			game_id, error_details, error_status
 		) VALUES (
-			:game_id, :error_details
+			:game_id, :error_details, :error_status
 		)
 	`
 	batchSize := 500
@@ -949,10 +999,175 @@ func InsertBoxScoreScrapingErrors(errors []BoxScoreScrapingError, timeout ...tim
 	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := walCheckpoint(&ctx); err != nil {
+	return nil
+}
+
+func UpdateResolvedBoxScoreScrapingErrors(ids []string, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
+	tx, err := dbRW.Beginx()
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	defer tx.Rollback()
+
+	query := `
+		UPDATE box_score_scraping_errors SET error_stats = 'RESOLVED' WHERE game_id IN (?);
+	`
+	query, args, err := sqlx.In(query, ids)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	if err := exec(tx, &ctx, query, args...); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
+}
+
+type Team struct {
+	ID           int       `db:"id"`
+	TeamName     string    `db:"team_name"`
+	City         string    `db:"city"`
+	Abbreviation string    `db:"abbreviation"`
+	Conference   string    `db:"conference"`
+	Division     string    `db:"division"`
+	Code         string    `db:"code"`
+	Slug         string    `db:"slug"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
+}
+
+func NewTeam(id int, teamName, city, abbreviation, conference, division, code, slug string) *Team {
+	return &Team{
+		ID:           id,
+		TeamName:     teamName,
+		City:         city,
+		Abbreviation: abbreviation,
+		Conference:   conference,
+		Division:     division,
+		Code:         code,
+		Slug:         slug,
+	}
+}
+
+func InsertTeams(teams []Team, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
+	tx, err := dbRW.Beginx()
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT OR IGNORE INTO teams (
+			id,
+			team_name,
+			city,
+			abbreviation,
+			conference,
+			division,
+			code,
+			slug
+		) VALUES (
+			:id,
+			:team_name,
+			:city,
+			:abbreviation,
+			:conference,
+			:division,
+			:code,
+			:slug
+		);
+	`
+	if err := namedExec(tx, &ctx, query, teams); err != nil {
+		utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
+		utils.ErrorWithTrace(err)
+	}
+	return nil
+}
+
+type PlayerSearchInfo struct {
+	PlayerID          int    `db:"player_id"`
+	PlayerName        string `db:"player_name"`
+	TeamNames         string `db:"team_names"`
+	TeamCities        string `db:"team_cities"`
+	TeamAbbreviations string `db:"team_abbreviations"`
+	TeamConferences   string `db:"team_conferences"`
+	TeamDivisions     string `db:"team_divisions"`
+	TeamCodes         string `db:"team_codes"`
+	TeamSlugs         string `db:"team_slugs"`
+}
+
+func (s *PlayerSearchInfo) SearchString() string {
+	return strings.ToLower(strings.Join([]string{
+		fmt.Sprintf("%d", s.PlayerID),
+		s.PlayerName,
+		s.TeamNames,
+		s.TeamCities,
+		s.TeamAbbreviations,
+		s.TeamConferences,
+		s.TeamDivisions,
+		s.TeamCodes,
+		s.TeamSlugs,
+	}, ","))
+}
+
+func GetPlayerPlayerSearchInfoBySeason(season string, timeout ...time.Duration) ([]PlayerSearchInfo, error) {
+	if utils.IsInvalidSeason(season) {
+		return nil, fmt.Errorf("invalid season provided: %s", season)
+	}
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
+	tx, err := dbRW.Beginx()
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	query := `
+		SELECT	p.id					AS player_id,
+			p.player_name 				AS player_name,
+			Group_concat(DISTINCT t.team_name)	AS team_names,
+			Group_concat(DISTINCT t.city)		AS team_cities,
+			Group_concat(DISTINCT t.abbreviation)	AS team_abbreviations,
+			Group_concat(DISTINCT t.conference)	AS team_conferences,
+			Group_concat(DISTINCT t.division)	AS team_divisions,
+			Group_concat(DISTINCT t.code)		AS team_codes,
+			Group_concat(DISTINCT t.slug)		AS team_slugs
+		FROM	players p
+			INNER JOIN box_score_player_stats bsps
+				ON p.id = bsps.player_id
+			INNER JOIN teams t
+				ON bsps.team_id = t.id
+		WHERE	bsps.season = ?
+		GROUP	BY p.id
+		ORDER 	BY p.player_name ASC;
+	`
+	info := []PlayerSearchInfo{}
+	if err := selekt(tx, &ctx, &info, query, season); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	if err := commitTx(tx, &ctx); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	return info, nil
 }
 
 func get(tx *sqlx.Tx, ctx *context.Context, dest any, query string, args ...any) error {

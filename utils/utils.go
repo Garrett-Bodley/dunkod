@@ -8,8 +8,13 @@ import (
 	"os"
 	"runtime"
 	"time"
+	"unicode"
 
 	"dunkod/config"
+
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 func ErrorWithTrace(e error) error {
@@ -613,4 +618,13 @@ func CreateSlug() string {
 		return activity + "-" + name1 + "-" + name2
 	}
 	return name1 + "-" + name2 + "-" + activity
+}
+
+func RemoveDiacritics(input string) string {
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	res, _, err := transform.String(t, input)
+	if err != nil {
+		return input
+	}
+	return res
 }

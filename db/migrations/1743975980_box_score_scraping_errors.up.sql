@@ -3,6 +3,7 @@ CREATE TABLE
     id INTEGER PRIMARY KEY UNIQUE,
     game_id TEXT NOT NULL,
     error_details TEXT NOT NULL,
+    error_status TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT (datetime ('now', 'localtime')),
     updated_at TIMESTAMP DEFAULT (datetime ('now', 'localtime')),
     FOREIGN KEY (game_id) REFERENCES games (id)
