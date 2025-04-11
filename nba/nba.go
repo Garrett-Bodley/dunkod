@@ -780,7 +780,7 @@ func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDeta
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
-	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PointDiff=&Position=&RangeType=&RookieYear=&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=&ContextMeasure=%s&GameID=%s&PlayerID=%s&Season=%sSeasonType=%s", contextMeasure, gameID, playerID, season, seasonType)
+	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PointDiff=&Position=&RangeType=&RookieYear=&SeasonSegment=&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=&ContextMeasure=%s&GameID=%s&PlayerID=%s&Season=%s&SeasonType=%s", contextMeasure, gameID, playerID, season, seasonType)
 	body, err := curl(url)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)

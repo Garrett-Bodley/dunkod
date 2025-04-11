@@ -102,7 +102,7 @@ func (w *Worker) DoYourJob(job *db.Job) {
 		return
 	}
 
-	title := makeTitle(games, playerNames)
+	title := makeTitle(job.Season, games, playerNames)
 	desc := makeDescription(job.Season, games, playerNames)
 
 	job.State = "UPLOADING"
@@ -136,9 +136,9 @@ func (w *Worker) DoYourJob(job *db.Job) {
 	}
 }
 
-func makeTitle(games []db.DatabaseGame, playerNames []string) string {
-	nameCharLimit := titleCharLimit/2 - 2
-	gameCharLimit := titleCharLimit/2 - 2
+func makeTitle(season string, games []db.DatabaseGame, playerNames []string) string {
+	nameCharLimit := titleCharLimit/2 - 7
+	gameCharLimit := titleCharLimit/2 - 7
 
 	formatted := []string{}
 	for _, p := range playerNames {
@@ -164,13 +164,14 @@ func makeTitle(games []db.DatabaseGame, playerNames []string) string {
 		gamesList += "..."
 	}
 
-	return namesList + " | " + gamesList
+	return namesList + " | " + gamesList + " | " + season
 }
 
 func makeDescription(season string, games []db.DatabaseGame, playerNames []string) string {
 	matchups := make([]string, 0, len(games))
 	for _, g := range games {
-		matchups = append(matchups, g.Matchup)
+		matchupString := fmt.Sprintf("%s %s", g.Matchup, g.GameDate)
+		matchups = append(matchups, matchupString)
 	}
 	matchupText := strings.Join(matchups, "\n")
 	nameText := strings.Join(playerNames, "\n")
