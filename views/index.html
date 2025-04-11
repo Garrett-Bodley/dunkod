@@ -132,12 +132,12 @@
   <div id="player-options" name="players" class="h-40 overflow-y-scroll bg-gray-100 p-2 rounded-lg">
     {{ range .Selected }}
         <label class="block text-nowrap">
-          <input type="checkbox" name="player" value="{{ printf "%.0f" (derefFloat64 .PersonID) }}" checked > {{ .DisplayFirstLast }} - {{ .TeamAbbreviation }}
+          <input type="checkbox" name="player" value="{{ printf "%d" .PlayerID }}" checked > {{ .PlayerName }} - {{ .TeamAbbreviations }}
         </label>
     {{ end}}
     {{ range .NotSelected }}
       <label class="block text-nowrap">
-        <input type="checkbox" name="player" value="{{ printf "%.0f" (derefFloat64 .PersonID) }}" > {{ .DisplayFirstLast }} - {{ .TeamAbbreviation }}
+        <input type="checkbox" name="player" value="{{ printf "%d" .PlayerID }}" > {{ .PlayerName }} - {{ .TeamAbbreviations }}
       </label>
     {{ end}}
   </div>

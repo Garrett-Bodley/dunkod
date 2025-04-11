@@ -24,8 +24,8 @@ var playerCache = map[string][]CommonAllPlayer{}
 
 type CommonAllPlayersResp struct {
 	ResultSets []struct {
-		Headers []string        `json:"headers"`
-		RowSet  [][]interface{} `json:"rowSet"`
+		Headers []string `json:"headers"`
+		RowSet  [][]any  `json:"rowSet"`
 	} `json:"resultSets"`
 }
 
@@ -296,8 +296,8 @@ func CommonAllPlayersBySeason(season string) ([]CommonAllPlayer, error) {
 
 type LeagueGameLogResp struct {
 	ResultSets []struct {
-		Headers []string        `json:"headers"`
-		RowSet  [][]interface{} `json:"rowSet"`
+		Headers []string `json:"headers"`
+		RowSet  [][]any  `json:"rowSet"`
 	} `json:"resultSets"`
 }
 
@@ -775,8 +775,8 @@ var VideoDetailsAssetContextMeasures = struct {
 	PTS:                "PTS",
 }
 
-func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
-	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&ContextMeasure=%s&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameID=%s&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PlayerID=%s&PointDiff=&Position=&RangeType=&RookieYear=&Season=2024-25&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=", contextMeasure, gameID, playerID)
+func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
+	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PointDiff=&Position=&RangeType=&RookieYear=&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=&ContextMeasure=%s&GameID=%s&PlayerID=%s&Season=%s", contextMeasure, gameID, playerID, season)
 	body, err := curl(url)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -821,8 +821,8 @@ func VideoDetailsAsset(gameID, playerID string, contextMeasure VideoDetailsAsset
 
 type LeagueGameFinderByPlayerIDResp struct {
 	ResultsSet []struct {
-		Headers []string        `json:"headers"`
-		RowSet  [][]interface{} `json:"rowSet"`
+		Headers []string `json:"headers"`
+		RowSet  [][]any  `json:"rowSet"`
 	} `json:"resultSets"`
 }
 
@@ -991,9 +991,9 @@ type BoxScoreTraditionalV2Resp struct {
 }
 
 type BoxScoreTraditionalV2ResultsSet struct {
-	Name    string          `json:"name"`
-	Headers []string        `json:"headers"`
-	RowSet  [][]interface{} `json:"rowSet"`
+	Name    string   `json:"name"`
+	Headers []string `json:"headers"`
+	RowSet  [][]any  `json:"rowSet"`
 }
 
 type BoxScoreTraditionalV2Data struct {
@@ -1381,6 +1381,169 @@ func unmarshalTeamStarterBenchStats(set BoxScoreTraditionalV2ResultsSet) ([]BoxS
 	return teamStarterBenchStats, nil
 }
 
+type TeamDetailsResp struct {
+	ResultSet []struct {
+		Name    string   `json:"name"`
+		Headers []string `json:"headers"`
+		RowSet  [][]any  `json:"rowSet"`
+	} `json:"resultSets"`
+}
+
+type TeamDetails struct {
+	TeamId             *int
+	Abbreviation       *string
+	Nickname           *string
+	YearFounded        *int
+	City               *string
+	Arena              *string
+	ArenaCapacity      *string
+	Owner              *string
+	GeneralManager     *string
+	HeadCoach          *string
+	DLeagueAffiliation *string
+}
+
+func GetTeamDetails(id int) (*TeamDetails, error) {
+	url := fmt.Sprintf("https://stats.nba.com/stats/teamdetails?TeamID=%d")
+	body, err := curl(url)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	unmarshalledBody := TeamDetailsResp{}
+	if err := json.Unmarshal(body, &unmarshalledBody); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	expectedHeaders := []string{
+		"TEAM_ID",
+		"ABBREVIATION",
+		"NICKNAME",
+		"YEARFOUNDED",
+		"CITY",
+		"ARENA",
+		"ARENACAPACITY",
+		"OWNER",
+		"GENERALMANAGER",
+		"HEADCOACH",
+		"DLEAGUEAFFILIATION",
+	}
+	receivedHeaders := unmarshalledBody.ResultSet[0].Headers
+
+	if err := validateHeaders(expectedHeaders, receivedHeaders); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	detailsRaw := unmarshalledBody.ResultSet[0].RowSet[0]
+	details := TeamDetails{
+		TeamId:             maybe[int](detailsRaw[0]),
+		Abbreviation:       maybe[string](detailsRaw[1]),
+		Nickname:           maybe[string](detailsRaw[2]),
+		YearFounded:        maybe[int](detailsRaw[3]),
+		City:               maybe[string](detailsRaw[4]),
+		Arena:              maybe[string](detailsRaw[5]),
+		ArenaCapacity:      maybe[string](detailsRaw[6]),
+		Owner:              maybe[string](detailsRaw[7]),
+		GeneralManager:     maybe[string](detailsRaw[8]),
+		HeadCoach:          maybe[string](detailsRaw[9]),
+		DLeagueAffiliation: maybe[string](detailsRaw[10]),
+	}
+
+	return &details, nil
+}
+
+type TeamInfoCommonResp struct {
+	ResultSets []struct {
+		Name    string   `json:"name"`
+		Headers []string `json:"headers"`
+		RowSet  [][]any  `json:"rowSet"`
+	} `json:"resultSets"`
+}
+
+type TeamInfo struct {
+	ID           *float64
+	SeasonYear   *string
+	City         *string
+	Name         *string
+	Abbreviation *string
+	Conference   *string
+	Division     *string
+	Code         *string
+	Slug         *string
+	W            *float64
+	L            *float64
+	PCT          *float64
+	ConfRank     *float64
+	DivRank      *float64
+	MinYear      *string
+	MaxYear      *string
+}
+
+func TeamInfoCommon(id int) (*TeamInfo, error) {
+	url := fmt.Sprintf("https://stats.nba.com/stats/teaminfocommon?LeagueID=00&TeamID=%d", id)
+	body, err := curl(url)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	unmarshalledBody := TeamInfoCommonResp{}
+	if err := json.Unmarshal(body, &unmarshalledBody); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	expectedHeaders := []string{
+		"TEAM_ID",
+		"SEASON_YEAR",
+		"TEAM_CITY",
+		"TEAM_NAME",
+		"TEAM_ABBREVIATION",
+		"TEAM_CONFERENCE",
+		"TEAM_DIVISION",
+		"TEAM_CODE",
+		"TEAM_SLUG",
+		"W",
+		"L",
+		"PCT",
+		"CONF_RANK",
+		"DIV_RANK",
+		"MIN_YEAR",
+		"MAX_YEAR",
+	}
+	var receivedHeaders *[]string
+	var raw *[]any
+	for _, r := range unmarshalledBody.ResultSets {
+		if r.Name == "TeamInfoCommon" {
+			receivedHeaders = &r.Headers
+			raw = &r.RowSet[0]
+		}
+	}
+	if receivedHeaders == nil || raw == nil {
+		return nil, utils.ErrorWithTrace(fmt.Errorf("could not find TeamInfoCommon resultSet (◞‸ ◟ ；)"))
+	}
+	if err := validateHeaders(expectedHeaders, *receivedHeaders); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	info := TeamInfo{
+		ID:           maybe[float64]((*raw)[0]),
+		SeasonYear:   maybe[string]((*raw)[1]),
+		City:         maybe[string]((*raw)[2]),
+		Name:         maybe[string]((*raw)[3]),
+		Abbreviation: maybe[string]((*raw)[4]),
+		Conference:   maybe[string]((*raw)[5]),
+		Division:     maybe[string]((*raw)[6]),
+		Code:         maybe[string]((*raw)[7]),
+		Slug:         maybe[string]((*raw)[8]),
+		W:            maybe[float64]((*raw)[9]),
+		L:            maybe[float64]((*raw)[10]),
+		PCT:          maybe[float64]((*raw)[11]),
+		ConfRank:     maybe[float64]((*raw)[12]),
+		DivRank:      maybe[float64]((*raw)[13]),
+		MinYear:      maybe[string]((*raw)[14]),
+		MaxYear:      maybe[string]((*raw)[15]),
+	}
+	return &info, nil
+}
+
 func validateHeaders(expected, received []string) error {
 	if len(expected) != len(received) {
 		return (fmt.Errorf("expected headers to be of length %d, found %d", len(expected), len(received)))
@@ -1428,7 +1591,7 @@ func GetPlayersByIds(season string, playerIDs []string) ([]CommonAllPlayer, erro
 	return players, nil
 }
 
-func PlayerCacheJanitor() {
+func PlayerCacheJanitor(duration time.Duration) {
 	ticker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -1463,6 +1626,7 @@ func curl(url string) ([]byte, error) {
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Referer", "https://www.nba.com/")
 	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Add("X-Please-Hire-Me", "https://github.com/Garrett-Bodley")
 
 	resp, err := nbaClient.Do(req)
 	if err != nil {

@@ -80,11 +80,11 @@ func newGameData(selected, notSelected []db.DatabaseGame) *GameData {
 }
 
 type PlayerData struct {
-	Selected    []nba.CommonAllPlayer
-	NotSelected []nba.CommonAllPlayer
+	Selected    []db.PlayerSearchInfo
+	NotSelected []db.PlayerSearchInfo
 }
 
-func newPlayerData(selected, notSelected []nba.CommonAllPlayer) *PlayerData {
+func newPlayerData(selected, notSelected []db.PlayerSearchInfo) *PlayerData {
 	return &PlayerData{
 		Selected:    selected,
 		NotSelected: notSelected,
@@ -120,9 +120,9 @@ func init() {
 	if err := db.RunMigrations(); err != nil {
 		panic(err)
 	}
-	if err := db.ValidateMigrations(); err != nil {
-		panic(err)
-	}
+	// if err := db.ValidateMigrations(); err != nil {
+	// 	panic(err)
+	// }
 	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
 	go cleanup()
 
@@ -135,9 +135,10 @@ func init() {
 		}
 		os.Exit(0)
 	}
-	go scrape.ScrapingDaemon()
-	go nba.PlayerCacheJanitor()
-	go youtube.ServiceJanitor()
+	go scrape.ScrapingDaemon(30 * time.Minute)
+	go nba.PlayerCacheJanitor(6 * time.Hour)
+	go youtube.ServiceJanitor(8 * time.Hour)
+	go jobs.StalledJobsJanitory(5 * time.Minute)
 	fmt.Println("The New York Knickerbockers are named after pants")
 }
 
@@ -168,12 +169,12 @@ func main() {
 		if err != nil {
 			return utils.ErrorWithTrace(err)
 		}
-		players, err := nba.CommonAllPlayersBySeason(season)
+		players, err := db.GetPlayerPlayerSearchInfoBySeason(season)
 		if err != nil {
 			return utils.ErrorWithTrace(err)
 		}
 
-		playerData := newPlayerData([]nba.CommonAllPlayer{}, players)
+		playerData := newPlayerData([]db.PlayerSearchInfo{}, players)
 		gameData := newGameData([]db.DatabaseGame{}, games)
 
 		state := newState(season, config.ValidSeasons, gameData, playerData)
@@ -189,11 +190,11 @@ func main() {
 		}
 		gameData := newGameData([]db.DatabaseGame{}, allGames)
 
-		allPlayers, err := nba.GetPlayersBySeason(season)
+		allPlayers, err := db.GetPlayerPlayerSearchInfoBySeason(season)
 		if err != nil {
 			return utils.ErrorWithTrace(err)
 		}
-		playerData := newPlayerData([]nba.CommonAllPlayer{}, allPlayers)
+		playerData := newPlayerData([]db.PlayerSearchInfo{}, allPlayers)
 
 		state := newState(season, config.ValidSeasons, gameData, playerData)
 
@@ -253,18 +254,18 @@ func main() {
 		season := req.FormValue("season")
 		checked := req.Form["player"]
 
-		seasonPlayers, err := nba.GetPlayersBySeason(season)
+		seasonPlayers, err := db.GetPlayerPlayerSearchInfoBySeason(season)
 		if err != nil {
 			return utils.ErrorWithTrace(err)
 		}
 
-		selected := []nba.CommonAllPlayer{}
-		notSelected := []nba.CommonAllPlayer{}
+		selected := []db.PlayerSearchInfo{}
+		notSelected := []db.PlayerSearchInfo{}
 
 	outer1:
 		for _, p := range seasonPlayers {
 			for _, id := range checked {
-				if id == fmt.Sprintf("%.0f", *p.PersonID) {
+				if id == fmt.Sprintf("%d", p.PlayerID) {
 					selected = append(selected, p)
 					continue outer1
 				}
@@ -275,7 +276,7 @@ func main() {
 	outer2:
 		for _, p := range filtered {
 			for _, cid := range checked {
-				if cid == fmt.Sprintf("%.0f", *p.PersonID) {
+				if cid == fmt.Sprintf("%d", p.PlayerID) {
 					continue outer2
 				}
 			}
@@ -350,19 +351,16 @@ func main() {
 			}
 			playerIds = append(playerIds, id)
 		}
-		players, err := nba.GetPlayersBySeason(job.Season)
+		players, err := db.GetPlayerPlayerSearchInfoBySeason(job.Season)
 		if err != nil {
 			jobState.Error = err.Error()
 			return c.Render(200, "job", jobState)
 		}
 		playerNames := make([]string, 0, len(playerIds))
 		for _, p := range players {
-			if p.PersonID == nil {
-				continue
-			}
 			for _, id := range playerIds {
-				if id == int(*p.PersonID) {
-					playerNames = append(playerNames, *p.DisplayFirstLast)
+				if id == p.PlayerID {
+					playerNames = append(playerNames, p.PlayerName)
 				}
 			}
 		}
@@ -500,18 +498,11 @@ func filterGamesByQuery(games []db.DatabaseGame, query string) []db.DatabaseGame
 	return filtered
 }
 
-func filterPlayersByQuery(players []nba.CommonAllPlayer, query string) []nba.CommonAllPlayer {
-	filtered := []nba.CommonAllPlayer{}
+func filterPlayersByQuery(players []db.PlayerSearchInfo, query string) []db.PlayerSearchInfo {
+	filtered := []db.PlayerSearchInfo{}
 	query = strings.ToLower(query)
 	for _, p := range players {
-		searchString := strings.ToLower(fmt.Sprintf("%s,%s,%s,%s,%s,%s",
-			*p.DisplayFirstLast,
-			*p.PlayerCode,
-			*p.TeamName,
-			*p.TeamCity,
-			*p.TeamSlug,
-			*p.TeamAbbreviation,
-		))
+		searchString := p.SearchString()
 		if strings.Contains(searchString, query) {
 			filtered = append(filtered, p)
 		}
@@ -543,7 +534,7 @@ func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.Video
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					assets, err := nba.VideoDetailsAsset(gid, pid, m)
+					assets, err := nba.VideoDetailsAsset(season, gid, pid, m)
 					if err != nil {
 						errChan <- utils.ErrorWithTrace(err)
 					}

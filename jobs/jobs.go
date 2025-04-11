@@ -84,7 +84,7 @@ func (w *Worker) DoYourJob(job *db.Job) {
 		return
 	}
 
-	players, err := nba.GetPlayersByIds(job.Season, playerIDs)
+	playerNames, err := db.SelectPlayerNamesById(playerIDs)
 	if err != nil {
 		log.Println(err)
 		if err := job.OhNo(err); err != nil {
@@ -102,8 +102,8 @@ func (w *Worker) DoYourJob(job *db.Job) {
 		return
 	}
 
-	title := makeTitle(games, players)
-	desc := makeDescription(job.Season, games, players)
+	title := makeTitle(games, playerNames)
+	desc := makeDescription(job.Season, games, playerNames)
 
 	job.State = "UPLOADING"
 	if err := db.UpdateJob(job); err != nil {
@@ -113,7 +113,7 @@ func (w *Worker) DoYourJob(job *db.Job) {
 		}
 		return
 	}
-	url, err := youtube.UploadFile(vidPath, title, desc, []string{"NBA", "nba", "basketball", "highlights", "sports"})
+	url, err := youtube.UploadFile(vidPath, title, desc, []string{"NBA", "nba", "basketball", "highlights", "sports", "Please Hire Me"})
 	if err != nil {
 		_ = os.Remove(vidPath)
 		if err := job.OhNo(err); err != nil {
@@ -136,19 +136,19 @@ func (w *Worker) DoYourJob(job *db.Job) {
 	}
 }
 
-func makeTitle(games []db.DatabaseGame, players []nba.CommonAllPlayer) string {
+func makeTitle(games []db.DatabaseGame, playerNames []string) string {
 	nameCharLimit := titleCharLimit/2 - 2
 	gameCharLimit := titleCharLimit/2 - 2
 
-	playerNames := []string{}
-	for _, p := range players {
-		split := strings.Split(*p.DisplayFirstLast, " ")
+	formatted := []string{}
+	for _, p := range playerNames {
+		split := strings.Split(p, " ")
 		split = split[1:]
 		lastName := strings.Join(split, " ")
-		playerNames = append(playerNames, lastName)
+		formatted = append(formatted, lastName)
 	}
 
-	namesList := strings.Join(playerNames, ", ")
+	namesList := strings.Join(formatted, ", ")
 	if len(namesList) > nameCharLimit {
 		namesList = namesList[:nameCharLimit-3]
 		namesList += "..."
@@ -167,18 +167,13 @@ func makeTitle(games []db.DatabaseGame, players []nba.CommonAllPlayer) string {
 	return namesList + " | " + gamesList
 }
 
-func makeDescription(season string, games []db.DatabaseGame, players []nba.CommonAllPlayer) string {
+func makeDescription(season string, games []db.DatabaseGame, playerNames []string) string {
 	matchups := make([]string, 0, len(games))
 	for _, g := range games {
 		matchups = append(matchups, g.Matchup)
 	}
 	matchupText := strings.Join(matchups, "\n")
-
-	names := make([]string, 0, len(players))
-	for _, p := range players {
-		names = append(names, *p.DisplayFirstLast)
-	}
-	nameText := strings.Join(names, "\n")
+	nameText := strings.Join(playerNames, "\n")
 
 	desc := "Season: " + season + "\n\nPlayers:\n" + nameText + "\n\nGames:\n" + matchupText
 	if len(desc) > descCharLimit {
@@ -334,7 +329,7 @@ func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.Video
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					assets, err := nba.VideoDetailsAsset(gid, pid, m)
+					assets, err := nba.VideoDetailsAsset(season, gid, pid, m)
 					if err != nil {
 						errChan <- utils.ErrorWithTrace(err)
 					}
@@ -423,4 +418,14 @@ func (s *Scheduler) GetIdleWorker() *Worker {
 		}
 	}
 	return nil
+}
+
+func StalledJobsJanitory(duration time.Duration) {
+	ticker := time.NewTicker(duration)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := db.ResetStaleJobs(); err != nil {
+			log.Println(err)
+		}
+	}
 }
