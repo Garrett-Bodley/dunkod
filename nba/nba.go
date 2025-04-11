@@ -776,7 +776,11 @@ var VideoDetailsAssetContextMeasures = struct {
 }
 
 func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
-	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PointDiff=&Position=&RangeType=&RookieYear=&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=&ContextMeasure=%s&GameID=%s&PlayerID=%s&Season=%s", contextMeasure, gameID, playerID, season)
+	seasonType, err := gameIDToSeasonTypeString(gameID)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	url := fmt.Sprintf("https://stats.nba.com/stats/videodetailsasset?AheadBehind=&ClutchTime=&ContextFilter=&DateFrom=&DateTo=&EndPeriod=&EndRange=&GameSegment=&LastNGames=0&LeagueID=&Location=&Month=0&OpponentTeamID=0&Outcome=&Period=0&PointDiff=&Position=&RangeType=&RookieYear=&SeasonSegment=&SeasonType=Regular+Season&StartPeriod=&StartRange=&TeamID=0&VsConference=&VsDivision=&ContextMeasure=%s&GameID=%s&PlayerID=%s&Season=%sSeasonType=%s", contextMeasure, gameID, playerID, season, seasonType)
 	body, err := curl(url)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -1647,4 +1651,21 @@ func maybe[T any](x any) *T {
 	}
 	// log.Printf("Type assertion failed: expected type %T, got type %v\n", *new(T), reflect.TypeOf(x))
 	return nil
+}
+
+func gameIDToSeasonTypeString(id string) (string, error) {
+	log.Println(id)
+	if strings.HasPrefix(id, "001") {
+		return "Pre+Season", nil
+	} else if strings.HasPrefix(id, "002") {
+		return "Regular+Season", nil
+	} else if strings.HasPrefix(id, "003") {
+		return "All+Star", nil
+	} else if strings.HasPrefix(id, "004") {
+		return "Playoffs", nil
+	} else if strings.HasPrefix(id, "005") {
+		return "PlayIn", nil
+	} else {
+		return "", utils.ErrorWithTrace(fmt.Errorf("could not parse id"))
+	}
 }
