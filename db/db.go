@@ -239,9 +239,6 @@ func InsertGames(games []DatabaseGame, timeout ...time.Duration) error {
 	if err := commitTx(tx, &ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := walCheckpoint(&ctx); err != nil {
-		return utils.ErrorWithTrace(err)
-	}
 	return nil
 }
 
@@ -1341,22 +1338,20 @@ func commitTx(tx *sqlx.Tx, ctx *context.Context) error {
 	defer close(errChan)
 	go func() {
 		for {
-			for {
-				select {
-				case <-(*ctx).Done():
-					errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out will attempting tx.Commit"))
+			select {
+			case <-(*ctx).Done():
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out will attempting tx.Commit"))
+				return
+			default:
+				err := tx.Commit()
+				if err == nil || errors.Is(err, sql.ErrTxDone) {
+					errChan <- nil
 					return
-				default:
-					err := tx.Commit()
-					if err == nil || errors.Is(err, sql.ErrTxDone) {
-						errChan <- nil
-						return
-					} else if !strings.Contains(err.Error(), "lock") {
-						errChan <- utils.ErrorWithTrace(err)
-						return
-					}
-					time.Sleep(50 * time.Millisecond)
+				} else if !strings.Contains(err.Error(), "lock") {
+					errChan <- utils.ErrorWithTrace(err)
+					return
 				}
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 	}()
