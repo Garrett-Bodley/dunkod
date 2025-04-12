@@ -25,7 +25,24 @@ var dbRW *sqlx.DB
 var dbRO *sqlx.DB
 
 func Close() error {
-	return errors.Join(dbRW.Close(), dbRO.Close())
+	timeout := 1 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	errChan := make(chan *[]error)
+
+	go func() {
+		errSlice := []error{}
+		errSlice = append(errSlice, dbRW.Close())
+		errSlice = append(errSlice, dbRO.Close())
+		errChan <- &errSlice
+	}()
+
+	select {
+	case errs := <-errChan:
+		return errors.Join(*errs...)
+	case <-ctx.Done():
+		return fmt.Errorf("timed out while trying to close database after %s", timeout)
+	}
 }
 
 func SetupDatabase() error {
