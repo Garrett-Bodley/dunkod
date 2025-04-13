@@ -19,6 +19,10 @@
         {
           "name": "secrets",
           "destinationPath": "/secrets"
+        },
+        {
+          "name": "logs",
+          "destinationPath": "/logs"
         }
       ]
     }

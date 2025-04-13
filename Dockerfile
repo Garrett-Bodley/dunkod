@@ -24,4 +24,4 @@ COPY --from=builder /app/db/migrations ./db/migrations
 COPY --from=builder /app/views ./views
 COPY --from=builder /app/assets ./assets
 
-CMD ["./dunkod", "-p"]
+CMD ./dunkod -p 2>&1 | tee -a ../logs/log.txt
