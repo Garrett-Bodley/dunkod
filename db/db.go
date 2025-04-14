@@ -29,6 +29,7 @@ func Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	errChan := make(chan *[]error)
+	defer close(errChan)
 
 	go func() {
 		errSlice := []error{}
@@ -427,9 +428,6 @@ func InsertPlayers(players []Player, timeout ...time.Duration) error {
 		return utils.ErrorWithTrace(err)
 	}
 	if err := commitTx(tx, &ctx); err != nil {
-		return utils.ErrorWithTrace(err)
-	}
-	if err := walCheckpoint(&ctx); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -1105,7 +1103,7 @@ func InsertTeams(teams []Team, timeout ...time.Duration) error {
 			:slug
 		);
 	`
-	if err := namedExec(tx, &ctx, query, teams); err != nil {
+	if err := batchInsert(tx, &ctx, 500, query, teams); err != nil {
 		utils.ErrorWithTrace(err)
 	}
 	if err := commitTx(tx, &ctx); err != nil {
