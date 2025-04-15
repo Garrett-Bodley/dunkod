@@ -1385,6 +1385,91 @@ func unmarshalTeamStarterBenchStats(set BoxScoreTraditionalV2ResultsSet) ([]BoxS
 	return teamStarterBenchStats, nil
 }
 
+type BoxScoreTraditionalV3Resp struct {
+	Meta struct {
+		Version *float64 `json:"version"`
+		Request *string  `json:"request"`
+		Time    *string  `json:"time"`
+	} `json:"meta"`
+	BoxScoreTraditional BoxScoreTraditionalV3Data `json:"boxScoreTraditional"`
+}
+
+type BoxScoreTraditionalV3Data struct {
+	GameId     *string                        `json:"gameId"`
+	AwayTeamId *float64                       `json:"awayTeamId"`
+	HomeTeamId *float64                       `json:"homeTeamId"`
+	HomeTeam   BoxScoreTraditionalV3TeamStats `json:"homeTeam"`
+	AwayTeam   BoxScoreTraditionalV3TeamStats `json:"awayTeam"`
+}
+
+type BoxScoreTraditionalV3TeamStats struct {
+	TeamId      *float64                      `json:"teamId"`
+	TeamCity    *string                       `json:"teamCity"`
+	TeamName    *string                       `json:"teamName"`
+	TeamTricode *string                       `json:"teamTricode"`
+	TeamSlug    *string                       `json:"teamSlug"`
+	Players     []BoxScoreTraditionalV3Player `json:"players"`
+	Statistics  BoxScoreTraditionalV3Stats    `json:"statistics"`
+	Starters    BoxScoreTraditionalV3Stats    `json:"starters"`
+	Bench       BoxScoreTraditionalV3Stats    `json:"bench"`
+}
+
+type BoxScoreTraditionalV3Player struct {
+	PersonId   *float64                   `json:"personId"`
+	FirstName  *string                    `json:"firstName"`
+	FamilyName *string                    `json:"familyName"`
+	NameI      *string                    `json:"nameI"`
+	PlayerSlug *string                    `json:"playerSlug"`
+	Position   *string                    `json:"position"`
+	Comment    *string                    `json:"comment"`
+	JerseyNum  *string                    `json:"jerseyNum"`
+	Statistics BoxScoreTraditionalV3Stats `json:"statistics"`
+}
+
+type BoxScoreTraditionalV3Stats struct {
+	Minutes                 *string  `json:"minutes"`
+	FieldGoalsMade          *float64 `json:"fieldGoalsMade"`
+	FieldGoalsAttempted     *float64 `json:"fieldGoalsAttempted"`
+	FieldGoalsPercentage    *float64 `json:"fieldGoalsPercentage"`
+	ThreePointersMade       *float64 `json:"threePointersMade"`
+	ThreePointersAttempted  *float64 `json:"threePointersAttempted"`
+	ThreePointersPercentage *float64 `json:"threePointersPercentage"`
+	FreeThrowsMade          *float64 `json:"freeThrowsMade"`
+	FreeThrowsAttempted     *float64 `json:"freeThrowsAttempted"`
+	FreeThrowsPercentage    *float64 `json:"freeThrowsPercentage"`
+	ReboundsOffensive       *float64 `json:"reboundsOffensive"`
+	ReboundsDefensive       *float64 `json:"reboundsDefensive"`
+	ReboundsTotal           *float64 `json:"reboundsTotal"`
+	Assists                 *float64 `json:"assists"`
+	Steals                  *float64 `json:"steals"`
+	Blocks                  *float64 `json:"blocks"`
+	Turnovers               *float64 `json:"turnovers"`
+	FoulsPersonal           *float64 `json:"foulsPersonal"`
+	Points                  *float64 `json:"points"`
+	PlusMinusPoints         *float64 `json:"plusMinusPoints"`
+}
+
+func (p *BoxScoreTraditionalV3Player) DidNotPlay() bool {
+	if p.Statistics.Minutes == nil {
+		return true
+	}
+	return *p.Statistics.Minutes == ""
+}
+
+func BoxScoreTraditionalV3(gameID string) (*BoxScoreTraditionalV3Data, error) {
+	url := fmt.Sprintf("https://stats.nba.com/stats/boxscoretraditionalv3?GameID=%s", gameID)
+	body, err := curl(url)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
+	unmarshalled := BoxScoreTraditionalV3Resp{}
+	if err := json.Unmarshal(body, &unmarshalled); err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+	return &unmarshalled.BoxScoreTraditional, nil
+}
+
 type TeamDetailsResp struct {
 	ResultSet []struct {
 		Name    string   `json:"name"`
@@ -1408,7 +1493,7 @@ type TeamDetails struct {
 }
 
 func GetTeamDetails(id int) (*TeamDetails, error) {
-	url := fmt.Sprintf("https://stats.nba.com/stats/teamdetails?TeamID=%d")
+	url := fmt.Sprintf("https://stats.nba.com/stats/teamdetails?TeamID=%d", id)
 	body, err := curl(url)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
