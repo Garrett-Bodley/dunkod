@@ -7,7 +7,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"dunkod/config"
@@ -96,128 +95,121 @@ func scrapeBoxScoresBySeason(season string) error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeBoxScores(games); err != nil {
+	if err := scrapeGames(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
 }
 
-func scrapeBoxScores(games []db.DatabaseGame) error {
+func scrapeBoxScores(games []db.DatabaseGame) ([]db.BoxScorePlayerStat, []db.BoxScoreScrapingError) {
 	log.Printf("querying %d box scores...", len(games))
 	if len(games) == 0 {
-		return nil
+		return nil, nil
 	}
+	timeout := 2 * time.Hour
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	playerStats := make([]db.BoxScorePlayerStat, 0, 4096)
-	statChan := make(chan *db.BoxScorePlayerStat, 100)
+	playerStats := make([]db.BoxScorePlayerStat, 0, len(games)*30) // max 15 active players per team
+	mu := sync.Mutex{}
 	scrapingErrs := []db.BoxScoreScrapingError{}
-	errChan := make(chan *db.BoxScoreScrapingError, 100)
-	gameWg := sync.WaitGroup{}
-	resWg := sync.WaitGroup{}
-	limiter := rate.NewLimiter(rate.Limit(5), 3)
-	entryCount := atomic.Int64{}
-	errCount := atomic.Int64{}
-	go func() {
-		for err := range errChan {
-			resWg.Done()
-			entryInt := entryCount.Load()
-			errInt := errCount.Load()
-			log.Printf("\tProcessed %d Entries, %d Errors     ", entryInt, errInt+1)
-			errCount.Add(1)
-			scrapingErrs = append(scrapingErrs, *err)
-		}
-	}()
-	go func() {
-		for playerStat := range statChan {
-			resWg.Done()
-			entryInt := entryCount.Load()
-			errInt := errCount.Load()
-			log.Printf("\tProcessed %d Entries, %d Errors     ", entryInt+1, errInt)
-			entryCount.Add(1)
-			playerStats = append(playerStats, *playerStat)
-		}
-	}()
+	limiter := rate.NewLimiter(rate.Limit(5), 3) // let's try not to blow up the nba API if we can help it
+	wg := sync.WaitGroup{}
 
 	for _, g := range games {
-		gameWg.Add(1)
+		wg.Add(1)
 		go func() {
-			defer gameWg.Done()
-			if err := limiter.Wait(context.Background()); err != nil {
-				scrapingErr := db.NewBoxScoreScrapingError(g.ID, utils.ErrorWithTrace(err).Error())
-				errChan <- scrapingErr
+			defer wg.Done()
+			if err := limiter.Wait(ctx); err != nil {
+				// this is kinda gross and annoying
+				timeoutErr := fmt.Errorf("timed out after %s while waiting to query %s", timeout)
+				scrapeErr := db.NewBoxScoreScrapingError(g.ID, utils.ErrorWithTrace(errors.Join(err, timeoutErr)))
+				mu.Lock()
+				defer mu.Unlock()
+				scrapingErrs = append(scrapingErrs, *scrapeErr)
 				return
 			}
-			boxScore, err := nba.BoxScoreTraditionalV2(g.ID)
-			if err != nil {
-				resWg.Add(1)
-				errDetails := utils.ErrorWithTrace(fmt.Errorf("%s - %s\n\t%s", g.Matchup, g.GameDate, err.Error()))
-				scrapingErr := db.NewBoxScoreScrapingError(g.ID, errDetails.Error())
-				errChan <- scrapingErr
-				return
+
+			gameStats, gameErrs := scrapeBoxScore(g.ID, g.Season)
+			mu.Lock()
+			defer mu.Unlock()
+			playerStats = append(playerStats, gameStats...)
+			if len(scrapingErrs) > 0 {
+				scrapingErrs = append(scrapingErrs, gameErrs...)
 			}
-			for _, p := range boxScore.PlayerStats {
-				didNotPlay, err := p.DidNotPlay()
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-				if didNotPlay {
-					continue
-				}
-				if p.PlayerId == nil || p.TeamId == nil {
-					resWg.Add(1)
-					errDetails := utils.ErrorWithTrace(fmt.Errorf("missing PlayerID and/or TeamId for %s", *p.PlayerName))
-					scrapingErr := db.NewBoxScoreScrapingError(g.ID, errDetails.Error())
-					errChan <- scrapingErr
-					continue
-				}
-				playerStat := db.NewBoxScorePlayerStat(
-					int(*p.PlayerId),
-					int(*p.TeamId),
-					*p.GameID,
-					g.Season,
-					p.MIN,
-					p.FGM,
-					p.FGA,
-					p.FG_PCT,
-					p.FG3M,
-					p.FG3A,
-					p.FG3_PCT,
-					p.FTM,
-					p.FTA,
-					p.FT_PCT,
-					p.OREB,
-					p.DREB,
-					p.REB,
-					p.AST,
-					p.STL,
-					p.BLK,
-					p.TO,
-					p.PF,
-					p.PTS,
-					p.PlusMinus,
-				)
-				resWg.Add(1)
-				statChan <- playerStat
-			}
+			log.Printf("Processed %d Entries, %d Errors", len(playerStats), len(scrapingErrs))
 		}()
 	}
-	gameWg.Wait()
-	close(statChan)
-	close(errChan)
-	resWg.Wait()
-	entryErr := db.InsertBoxScorePlayerStats(playerStats)
-	if entryErr != nil {
-		entryErr = utils.ErrorWithTrace(entryErr)
+
+	wg.Wait()
+	return playerStats, scrapingErrs
+}
+
+func scrapeBoxScore(gid, season string) ([]db.BoxScorePlayerStat, []db.BoxScoreScrapingError) {
+	boxScore, err := nba.BoxScoreTraditionalV3(gid)
+	if err != nil {
+		return nil, []db.BoxScoreScrapingError{*db.NewBoxScoreScrapingError(gid, err)}
 	}
-	errorsErr := db.InsertBoxScoreScrapingErrors(scrapingErrs)
-	if errorsErr != nil {
-		errorsErr = utils.ErrorWithTrace(errorsErr)
+
+	stats := make([]db.BoxScorePlayerStat, 0, 15)
+	errs := make([]db.BoxScoreScrapingError, 0, 15)
+
+	homeStats, homeErrs := scrapeBoxScoreTeam(gid, season, boxScore.HomeTeam)
+	stats = append(stats, homeStats...)
+	errs = append(errs, homeErrs...)
+
+	awayStats, awayErrs := scrapeBoxScoreTeam(gid, season, boxScore.AwayTeam)
+	stats = append(stats, awayStats...)
+	errs = append(errs, awayErrs...)
+
+	return stats, errs
+}
+
+func scrapeBoxScoreTeam(gid, season string, team nba.BoxScoreTraditionalV3TeamStats) ([]db.BoxScorePlayerStat, []db.BoxScoreScrapingError) {
+	if team.TeamId == nil {
+		err := utils.ErrorWithTrace(fmt.Errorf("nil TeamID"))
+		return nil, []db.BoxScoreScrapingError{*db.NewBoxScoreScrapingError(gid, err)}
 	}
-	if entryErr != nil || errorsErr != nil {
-		return errors.Join(entryErr, errorsErr)
+
+	stats := []db.BoxScorePlayerStat{}
+	errs := []db.BoxScoreScrapingError{}
+
+	for _, p := range team.Players {
+		if p.PersonId == nil {
+			err := utils.ErrorWithTrace(fmt.Errorf("nil PersonID"))
+			errs = append(errs, *db.NewBoxScoreScrapingError(gid, err))
+			continue
+		}
+		stat := db.NewBoxScorePlayerStat(
+			int(*p.PersonId),
+			int(*team.TeamId),
+			gid,
+			season,
+			p.DidNotPlay(),
+			p.Statistics.Minutes,
+			p.Statistics.FieldGoalsMade,
+			p.Statistics.FieldGoalsAttempted,
+			p.Statistics.FieldGoalsPercentage,
+			p.Statistics.ThreePointersMade,
+			p.Statistics.ThreePointersAttempted,
+			p.Statistics.ThreePointersPercentage,
+			p.Statistics.FreeThrowsMade,
+			p.Statistics.FreeThrowsAttempted,
+			p.Statistics.FreeThrowsPercentage,
+			p.Statistics.ReboundsOffensive,
+			p.Statistics.ReboundsDefensive,
+			p.Statistics.ReboundsTotal,
+			p.Statistics.Assists,
+			p.Statistics.Steals,
+			p.Statistics.Blocks,
+			p.Statistics.Turnovers,
+			p.Statistics.FoulsPersonal,
+			p.Statistics.Points,
+			p.Statistics.PlusMinusPoints,
+		)
+		stats = append(stats, *stat)
 	}
-	return nil
+	return stats, errs
 }
 
 type BoxScoreScrapingRes struct {
@@ -232,72 +224,28 @@ func NewBoxScoreScrapingRes(stats *[]*db.BoxScorePlayerStat, errs *[]*db.BoxScor
 	}
 }
 
-func scrapeBoxScore(game db.DatabaseGame) *BoxScoreScrapingRes {
-	boxScore, err := nba.BoxScoreTraditionalV2(game.ID)
-	if err != nil {
-		return NewBoxScoreScrapingRes(nil, &[]*db.BoxScoreScrapingError{
-			db.NewBoxScoreScrapingError(game.ID, utils.ErrorWithTrace(err).Error()),
-		})
-	}
-	playerStats := []*db.BoxScorePlayerStat{}
-	errs := []*db.BoxScoreScrapingError{}
-
-	for _, p := range boxScore.PlayerStats {
-		didNotPlay, err := p.DidNotPlay()
-		if err != nil {
-			scrapingErr := db.NewBoxScoreScrapingError(game.ID, utils.ErrorWithTrace(err).Error())
-			errs = append(errs, scrapingErr)
-			continue
-		}
-		if didNotPlay {
-			continue
-		}
-		if p.PlayerId == nil || p.TeamId == nil {
-			errDetails := utils.ErrorWithTrace(fmt.Errorf("missing PlayerID and/or TeamId for %s", *p.PlayerName))
-			scrapingErr := db.NewBoxScoreScrapingError(game.ID, errDetails.Error())
-			errs = append(errs, scrapingErr)
-			continue
-		}
-		playerStat := db.NewBoxScorePlayerStat(
-			int(*p.PlayerId),
-			int(*p.TeamId),
-			game.ID,
-			game.Season,
-			p.MIN,
-			p.FGM,
-			p.FGA,
-			p.FG_PCT,
-			p.FG3M,
-			p.FG3A,
-			p.FG3_PCT,
-			p.FTM,
-			p.FTA,
-			p.FT_PCT,
-			p.OREB,
-			p.DREB,
-			p.REB,
-			p.AST,
-			p.STL,
-			p.BLK,
-			p.TO,
-			p.PF,
-			p.PTS,
-			p.PlusMinus,
-		)
-		playerStats = append(playerStats, playerStat)
-	}
-	return NewBoxScoreScrapingRes(&playerStats, &errs)
-}
-
 func rescrapeLastNGameBoxScores(n int) error {
 	games, err := db.SelectGamesPastNDays(n)
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeBoxScores(games); err != nil {
+	if err := scrapeGames(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
+}
+
+func scrapeGames(games []db.DatabaseGame) error {
+	playerStats, scrapingErrs := scrapeBoxScores(games)
+	insertPlayerErr := db.InsertBoxScorePlayerStats(playerStats)
+	if insertPlayerErr != nil {
+		insertPlayerErr = utils.ErrorWithTrace(insertPlayerErr)
+	}
+	errorFromInsertingScrapingErrs := db.InsertBoxScoreScrapingErrors(scrapingErrs)
+	if errorFromInsertingScrapingErrs != nil {
+		errorFromInsertingScrapingErrs = utils.ErrorWithTrace(errorFromInsertingScrapingErrs)
+	}
+	return errors.Join(insertPlayerErr, errorFromInsertingScrapingErrs)
 }
 
 func rescrapeBoxScoreErrors() error {
@@ -305,75 +253,9 @@ func rescrapeBoxScoreErrors() error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	log.Printf("querying %d box scores...", len(games))
-	// this is grotesque but idk there's a lot that can go wrong here
-	stats := []*db.BoxScorePlayerStat{}
-	statMu := sync.Mutex{}
-	errMap := map[string][]*db.BoxScoreScrapingError{}
-	errMu := sync.Mutex{}
-	wg := sync.WaitGroup{}
-	limiter := rate.NewLimiter(rate.Limit(5), 3)
-
-	for _, g := range games {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := limiter.Wait(context.Background()); err != nil {
-				errMu.Lock()
-				defer errMu.Unlock()
-				if _, exists := errMap[g.ID]; !exists {
-					errMap[g.ID] = []*db.BoxScoreScrapingError{}
-				}
-				scrapErr := db.NewBoxScoreScrapingError(g.ID, utils.ErrorWithTrace(err).Error())
-				errMap[g.ID] = append(errMap[g.ID], scrapErr)
-				return
-			}
-			res := scrapeBoxScore(g)
-			statMu.Lock()
-			defer statMu.Unlock()
-			stats = append(stats, *res.PlayerStats...)
-			if len(*res.Errors) > 0 {
-				errMu.Lock()
-				defer errMu.Unlock()
-				if _, exists := errMap[g.ID]; !exists {
-					errMap[g.ID] = []*db.BoxScoreScrapingError{}
-				}
-				errMap[g.ID] = append(errMap[g.ID], *res.Errors...)
-			}
-		}()
-	}
-	wg.Wait()
-
-	derefStats := make([]db.BoxScorePlayerStat, 0, len(stats))
-	for _, s := range stats {
-		derefStats = append(derefStats, *s)
-	}
-	if err := db.InsertBoxScorePlayerStats(derefStats); err != nil {
+	if err := scrapeGames(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-
-	resolvedIDs := []string{}
-	for _, g := range games {
-		if _, hasErr := errMap[g.ID]; hasErr {
-			continue
-		}
-		resolvedIDs = append(resolvedIDs, g.ID)
-	}
-	if len(resolvedIDs) > 0 {
-		if err := db.UpdateResolvedBoxScoreScrapingErrors(resolvedIDs); err != nil {
-			return utils.ErrorWithTrace(err)
-		}
-	}
-	errs := []db.BoxScoreScrapingError{}
-	for _, errSlice := range errMap {
-		for _, e := range errSlice {
-			errs = append(errs, *e)
-		}
-	}
-	if err := db.InsertBoxScoreScrapingErrors(errs); err != nil {
-		return utils.ErrorWithTrace(err)
-	}
-
 	return nil
 }
 

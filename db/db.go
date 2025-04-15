@@ -77,6 +77,9 @@ func SetupDatabase() error {
 	if err := validateDbRO(dbRO); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
+	if err := validateDbRW(dbRW); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
 
 	return nil
 }
@@ -521,6 +524,7 @@ type BoxScorePlayerStat struct {
 	TeamID    int       `db:"team_id"`
 	GameID    string    `db:"game_id"`
 	Season    string    `db:"season"`
+	DNP       bool      `db:"dnp"`
 	MIN       *string   `db:"min"`
 	FGM       *float64  `db:"fgm"`
 	FGA       *float64  `db:"fga"`
@@ -548,6 +552,7 @@ type BoxScorePlayerStat struct {
 func NewBoxScorePlayerStat(
 	playerID, teamID int,
 	gameID, season string,
+	dnp bool,
 	min *string,
 	fgm, fga, fg_pct, fg3m, fg3a, fg3_pct, ftm, fta, ft_pct, oreb, dreb, reb, ast, stl, blk, tov, pf, pts, plusMinus *float64,
 ) *BoxScorePlayerStat {
@@ -556,6 +561,7 @@ func NewBoxScorePlayerStat(
 		TeamID:    teamID,
 		GameID:    gameID,
 		Season:    season,
+		DNP:       dnp,
 		MIN:       min,
 		FGM:       fgm,
 		FGA:       fga,
@@ -620,7 +626,8 @@ func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Durat
 			tov,
 			pf,
 			pts,
-			plus_minus
+			plus_minus,
+			dnp
 		)
 		VALUES
 		(
@@ -647,7 +654,8 @@ func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Durat
 			:tov,
 			:pf,
 			:pts,
-			:plus_minus
+			:plus_minus,
+			:dnp
 		);
 	`
 
@@ -975,10 +983,10 @@ type BoxScoreScrapingError struct {
 	UpdatedAt    time.Time `db:"updated_at"`
 }
 
-func NewBoxScoreScrapingError(gameID, errorDetails string) *BoxScoreScrapingError {
+func NewBoxScoreScrapingError(gameID string, err error) *BoxScoreScrapingError {
 	return &BoxScoreScrapingError{
 		GameID:       gameID,
-		ErrorDetails: errorDetails,
+		ErrorDetails: err.Error(),
 		ErrorStatus:  "PENDING",
 	}
 }

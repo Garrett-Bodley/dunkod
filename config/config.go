@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 var DatabaseFile string
@@ -12,6 +13,10 @@ var TokenFile string
 var ProdFlag *bool
 var BigScrape *bool
 
+// Sorted slice of all valid seasons
+//
+//	ValidSeasons[0] == most recent valid season
+//	ValidSeasons[len(ValidSeasons)-1] == oldest valid season
 var ValidSeasons = []string{
 	"2024-25",
 	"2023-24",
@@ -85,5 +90,7 @@ func LoadConfig() error {
 		SecretFile = filepath.Join(filepath.Dir(binPath), "secret.json")
 		TokenFile = filepath.Join(filepath.Dir(binPath), "token.json")
 	}
+	slices.Sort(ValidSeasons)
+	slices.Reverse(ValidSeasons)
 	return nil
 }

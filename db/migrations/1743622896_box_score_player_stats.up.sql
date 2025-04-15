@@ -5,6 +5,7 @@ CREATE TABLE
     team_id INT NOT NULL,
     game_id TEXT NOT NULL,
     season TEXT NOT NULL,
+    dnp BOOLEAN NOT NULL,
     min TEXT,
     fgm REAL,
     fga REAL,
