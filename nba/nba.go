@@ -1598,37 +1598,37 @@ func TeamInfoCommon(id int) (*TeamInfo, error) {
 		"MIN_YEAR",
 		"MAX_YEAR",
 	}
-	var receivedHeaders *[]string
-	var raw *[]any
+	var receivedHeaders []string
+	var raw []any
 	for _, r := range unmarshalledBody.ResultSets {
 		if r.Name == "TeamInfoCommon" {
-			receivedHeaders = &r.Headers
-			raw = &r.RowSet[0]
+			receivedHeaders = r.Headers
+			raw = r.RowSet[0]
 		}
 	}
 	if receivedHeaders == nil || raw == nil {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("could not find TeamInfoCommon resultSet (◞‸ ◟ ；)"))
 	}
-	if err := validateHeaders(expectedHeaders, *receivedHeaders); err != nil {
+	if err := validateHeaders(expectedHeaders, receivedHeaders); err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	info := TeamInfo{
-		ID:           maybe[float64]((*raw)[0]),
-		SeasonYear:   maybe[string]((*raw)[1]),
-		City:         maybe[string]((*raw)[2]),
-		Name:         maybe[string]((*raw)[3]),
-		Abbreviation: maybe[string]((*raw)[4]),
-		Conference:   maybe[string]((*raw)[5]),
-		Division:     maybe[string]((*raw)[6]),
-		Code:         maybe[string]((*raw)[7]),
-		Slug:         maybe[string]((*raw)[8]),
-		W:            maybe[float64]((*raw)[9]),
-		L:            maybe[float64]((*raw)[10]),
-		PCT:          maybe[float64]((*raw)[11]),
-		ConfRank:     maybe[float64]((*raw)[12]),
-		DivRank:      maybe[float64]((*raw)[13]),
-		MinYear:      maybe[string]((*raw)[14]),
-		MaxYear:      maybe[string]((*raw)[15]),
+		ID:           maybe[float64](raw[0]),
+		SeasonYear:   maybe[string](raw[1]),
+		City:         maybe[string](raw[2]),
+		Name:         maybe[string](raw[3]),
+		Abbreviation: maybe[string](raw[4]),
+		Conference:   maybe[string](raw[5]),
+		Division:     maybe[string](raw[6]),
+		Code:         maybe[string](raw[7]),
+		Slug:         maybe[string](raw[8]),
+		W:            maybe[float64](raw[9]),
+		L:            maybe[float64](raw[10]),
+		PCT:          maybe[float64](raw[11]),
+		ConfRank:     maybe[float64](raw[12]),
+		DivRank:      maybe[float64](raw[13]),
+		MinYear:      maybe[string](raw[14]),
+		MaxYear:      maybe[string](raw[15]),
 	}
 	return &info, nil
 }
