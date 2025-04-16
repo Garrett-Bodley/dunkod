@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"time"
 	"unicode"
 
@@ -23,12 +24,7 @@ func ErrorWithTrace(e error) error {
 }
 
 func IsInvalidSeason(season string) bool {
-	for _, s := range config.ValidSeasons {
-		if season == s {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(config.ValidSeasons, season)
 }
 
 var sem = make(chan int, 50)
