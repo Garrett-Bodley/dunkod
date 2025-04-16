@@ -95,7 +95,7 @@ func scrapeBoxScoresBySeason(season string) error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeGames(games); err != nil {
+	if err := ScrapeGamesBoxScores(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
@@ -122,8 +122,8 @@ func scrapeBoxScores(games []db.DatabaseGame) ([]db.BoxScorePlayerStat, []db.Box
 			defer wg.Done()
 			if err := limiter.Wait(ctx); err != nil {
 				// this is kinda gross and annoying
-				timeoutErr := fmt.Errorf("timed out after %s while waiting to query %s", timeout)
-				scrapeErr := db.NewBoxScoreScrapingError(g.ID, utils.ErrorWithTrace(errors.Join(err, timeoutErr)))
+				timeoutErr := fmt.Errorf("timed out after %s while waiting to query %s", timeout, g.ID)
+				scrapeErr := db.NewBoxScoreScrapingError(g.ID, utils.ErrorWithTrace(errors.Join(timeoutErr, err)))
 				mu.Lock()
 				defer mu.Unlock()
 				scrapingErrs = append(scrapingErrs, *scrapeErr)
@@ -229,18 +229,19 @@ func rescrapeLastNGameBoxScores(n int) error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeGames(games); err != nil {
+	if err := ScrapeGamesBoxScores(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil
 }
 
-func scrapeGames(games []db.DatabaseGame) error {
+func ScrapeGamesBoxScores(games []db.DatabaseGame) error {
 	playerStats, scrapingErrs := scrapeBoxScores(games)
-	insertPlayerErr := db.InsertBoxScorePlayerStats(playerStats)
+	newScrapingErrs, insertPlayerErr := db.InsertBoxScorePlayerStats(playerStats)
 	if insertPlayerErr != nil {
 		insertPlayerErr = utils.ErrorWithTrace(insertPlayerErr)
 	}
+	scrapingErrs = append(scrapingErrs, newScrapingErrs...)
 	errorFromInsertingScrapingErrs := db.InsertBoxScoreScrapingErrors(scrapingErrs)
 	if errorFromInsertingScrapingErrs != nil {
 		errorFromInsertingScrapingErrs = utils.ErrorWithTrace(errorFromInsertingScrapingErrs)
@@ -253,7 +254,7 @@ func rescrapeBoxScoreErrors() error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
-	if err := scrapeGames(games); err != nil {
+	if err := ScrapeGamesBoxScores(games); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	return nil

@@ -135,6 +135,9 @@ func validateDbRO(db *sqlx.DB) error {
 }
 
 func RunMigrations() error {
+	if _, err := dbRW.Exec("DROP TABLE IF EXISTS schema_migrations;"); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
 	m, err := migrate.New(
 		"file://db/migrations",
 		"sqlite3://"+config.DatabaseFile,
@@ -145,8 +148,8 @@ func RunMigrations() error {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return utils.ErrorWithTrace(err)
 	}
-	if sourceErr, destErr := m.Close(); sourceErr != nil || destErr != nil {
-		return utils.ErrorWithTrace(errors.Join(sourceErr, destErr))
+	if sourceErr, dbErr := m.Close(); sourceErr != nil || dbErr != nil {
+		return utils.ErrorWithTrace(errors.Join(sourceErr, dbErr))
 	}
 	return nil
 }
@@ -549,6 +552,34 @@ type BoxScorePlayerStat struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
+func (p *BoxScorePlayerStat) Log() {
+	log.Printf(
+		"PlayerID: %d\n"+
+			"\tTeamID: %d\n"+
+			"\tGameID: %s\n"+
+			"\tSeason: %s\n"+
+			"\tDNP: %t\n",
+		p.PlayerID,
+		p.TeamID,
+		p.GameID,
+		p.Season,
+		p.DNP)
+}
+
+func (p *BoxScorePlayerStat) LogString() string {
+	return fmt.Sprintf(
+		"PlayerID: %d\n"+
+			"\tTeamID: %d\n"+
+			"\tGameID: %s\n"+
+			"\tSeason: %s\n"+
+			"\tDNP: %t\n",
+		p.PlayerID,
+		p.TeamID,
+		p.GameID,
+		p.Season,
+		p.DNP)
+}
+
 func NewBoxScorePlayerStat(
 	playerID, teamID int,
 	gameID, season string,
@@ -585,23 +616,23 @@ func NewBoxScorePlayerStat(
 	}
 }
 
-func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Duration) error {
+func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Duration) ([]BoxScoreScrapingError, error) {
 	parsedTimeout, err := parseTimeout(timeout...)
 	if err != nil {
-		return utils.ErrorWithTrace(err)
+		return nil, utils.ErrorWithTrace(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
 
 	tx, err := dbRW.Beginx()
 	if err != nil {
-		return utils.ErrorWithTrace(err)
+		return nil, utils.ErrorWithTrace(err)
 	}
 	defer tx.Rollback()
 	query := `
 		INSERT
-		or     IGNORE
-		into   box_score_player_stats
+		or	IGNORE
+		into	box_score_player_stats
 		(
 			player_id,
 			team_id,
@@ -658,15 +689,26 @@ func InsertBoxScorePlayerStats(stats []BoxScorePlayerStat, timeout ...time.Durat
 			:dnp
 		);
 	`
+	scrapingErrors := []BoxScoreScrapingError{}
+	// Using a loop so I can detect which ones have failed
+	for _, s := range stats {
+		if _, err := tx.NamedExec(query, s); err != nil {
+			if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") && s.DNP {
+				continue
+			}
 
-	batchSize := 500
-	if err := batchInsert(tx, &ctx, batchSize, query, stats); err != nil {
-		return utils.ErrorWithTrace(err)
+			errMetaData := fmt.Errorf("\t%s", s.LogString())
+			scrapingErr := *NewBoxScoreScrapingError(
+				s.GameID,
+				utils.ErrorWithTrace(errors.Join(err, errMetaData)),
+			)
+			scrapingErrors = append(scrapingErrors, scrapingErr)
+		}
 	}
 	if err := commitTx(tx, &ctx); err != nil {
-		return utils.ErrorWithTrace(err)
+		return nil, utils.ErrorWithTrace(err)
 	}
-	return nil
+	return scrapingErrors, nil
 }
 
 type Job struct {

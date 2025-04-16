@@ -120,12 +120,8 @@ func init() {
 	if err := db.RunMigrations(); err != nil {
 		panic(err)
 	}
-	// if err := db.ValidateMigrations(); err != nil {
-	// 	panic(err)
-	// }
 	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt, syscall.SIGINT)
 	go cleanup()
-
 	if err := youtube.InitService(); err != nil {
 		panic(err)
 	}
@@ -136,7 +132,6 @@ func init() {
 		os.Exit(0)
 	}
 	go scrape.ScrapingDaemon(30 * time.Minute)
-	go nba.PlayerCacheJanitor(6 * time.Hour)
 	go youtube.ServiceJanitor(8 * time.Hour)
 	go jobs.StalledJobsJanitory(5 * time.Minute)
 	fmt.Println("The New York Knickerbockers are named after pants")
