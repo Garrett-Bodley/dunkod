@@ -35,6 +35,12 @@ CREATE TABLE
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_player_game_team ON box_score_player_stats (player_id, game_id, team_id, season);
 
+CREATE INDEX IF NOT EXISTS idx_player_id ON box_score_player_stats (player_id);
+
+CREATE INDEX IF NOT EXISTS idx_game_id ON box_score_player_stats (game_id);
+
+CREATE INDEX IF NOT EXISTS idx_team_id ON box_score_player_stats (team_id);
+
 CREATE TRIGGER IF NOT EXISTS update_box_score_player_stats AFTER
 UPDATE ON box_score_player_stats FOR EACH ROW BEGIN
 UPDATE box_score_player_stats

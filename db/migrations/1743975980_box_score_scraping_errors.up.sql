@@ -9,6 +9,8 @@ CREATE TABLE
     FOREIGN KEY (game_id) REFERENCES games (id)
   );
 
+CREATE INDEX IF NOT EXISTS idx_game_id ON box_score_scraping_errors (game_id);
+
 CREATE TRIGGER IF NOT EXISTS update_box_score_scraping_errors_modtime AFTER
 UPDATE ON box_score_scraping_errors FOR EACH ROW BEGIN
 UPDATE box_score_scraping_errors

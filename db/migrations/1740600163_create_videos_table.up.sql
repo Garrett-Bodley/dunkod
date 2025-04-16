@@ -10,6 +10,8 @@ CREATE TABLE
     FOREIGN KEY (job_id) REFERENCES jobs (id)
   );
 
+CREATE INDEX IF NOT EXISTS idx_job_id ON videos(job_id);
+
 CREATE TRIGGER IF NOT EXISTS update_videos_modtime AFTER
 UPDATE ON videos FOR EACH ROW BEGIN
 UPDATE videos
