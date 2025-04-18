@@ -5,7 +5,7 @@ CREATE TABLE
     games TEXT NOT NULL,
     season TEXT NOT NULL,
     slug TEXT NOT NULL UNIQUE,
-    job_state TEXT NOT NULL,
+    job_state TEXT NOT NULL DEFAULT "PENDING",
     job_hash TEXT UNIQUE NOT NULL,
     error_details TEXT,
     created_at TIMESTAMP DEFAULT (datetime ('now', 'localtime')),
