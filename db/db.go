@@ -514,6 +514,7 @@ func SelectPlayerNamesById(ids []string, timeout ...time.Duration) ([]string, er
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	query = tx.Rebind(query)
 	names := []string{}
 	if err := selekt(tx, &ctx, &names, query, args...); err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -1084,6 +1085,7 @@ func UpdateResolvedBoxScoreScrapingErrors(ids []string, timeout ...time.Duration
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
+	query = tx.Rebind(query)
 	if err := exec(tx, &ctx, query, args...); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
