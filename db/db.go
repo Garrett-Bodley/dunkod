@@ -317,7 +317,7 @@ func SelectGamesPastNDays(n int, timeout ...time.Duration) ([]DatabaseGame, erro
 	query := `
 		SELECT *
 		FROM   games
-		WHERE  game_date > Date('now', Concat('-', ?, ' days'))
+		WHERE  game_date >= Date('now', Concat('-', ?, ' days'))
 		ORDER  BY game_date ASC;
 	`
 	games := []DatabaseGame{}
