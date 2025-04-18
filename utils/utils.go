@@ -18,6 +18,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+const Sad = "(◞‸ ◟ ；)"
+
 func ErrorWithTrace(e error) error {
 	_, file, line, _ := runtime.Caller(1)
 	return fmt.Errorf("%s:%d\n\t%v", file, line, e)

@@ -122,7 +122,7 @@ func scrapeBoxScores(games []db.DatabaseGame) ([]db.BoxScorePlayerStat, []db.Box
 			defer wg.Done()
 			if err := limiter.Wait(ctx); err != nil {
 				// this is kinda gross and annoying
-				timeoutErr := fmt.Errorf("timed out after %s while waiting to query %s", timeout, g.ID)
+				timeoutErr := fmt.Errorf("timed out after %s while waiting to query %s "+utils.Sad, timeout, g.ID)
 				scrapeErr := db.NewBoxScoreScrapingError(g.ID, utils.ErrorWithTrace(errors.Join(timeoutErr, err)))
 				mu.Lock()
 				defer mu.Unlock()
@@ -167,7 +167,7 @@ func scrapeBoxScore(gid, season string) ([]db.BoxScorePlayerStat, []db.BoxScoreS
 
 func scrapeBoxScoreTeam(gid, season string, team nba.BoxScoreTraditionalV3TeamStats) ([]db.BoxScorePlayerStat, []db.BoxScoreScrapingError) {
 	if team.TeamId == nil {
-		err := utils.ErrorWithTrace(fmt.Errorf("nil TeamID"))
+		err := utils.ErrorWithTrace(fmt.Errorf("nil TeamID " + utils.Sad))
 		return nil, []db.BoxScoreScrapingError{*db.NewBoxScoreScrapingError(gid, err)}
 	}
 
@@ -176,7 +176,7 @@ func scrapeBoxScoreTeam(gid, season string, team nba.BoxScoreTraditionalV3TeamSt
 
 	for _, p := range team.Players {
 		if p.PersonId == nil {
-			err := utils.ErrorWithTrace(fmt.Errorf("nil PersonID"))
+			err := utils.ErrorWithTrace(fmt.Errorf("nil PersonID " + utils.Sad))
 			errs = append(errs, *db.NewBoxScoreScrapingError(gid, err))
 			continue
 		}

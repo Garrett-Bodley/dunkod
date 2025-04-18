@@ -70,52 +70,52 @@ type CommonAllPlayerJSON struct {
 func (p CommonAllPlayer) LogNilFields() {
 	errs := []error{}
 	if p.PersonID == nil {
-		errs = append(errs, fmt.Errorf("nil field 'PersonID'"))
+		errs = append(errs, fmt.Errorf("nil field 'PersonID' "+utils.Sad))
 	}
 	if p.DisplayLastFirst == nil {
-		errs = append(errs, fmt.Errorf("nil field 'DisplayLastFirst'"))
+		errs = append(errs, fmt.Errorf("nil field 'DisplayLastFirst' "+utils.Sad))
 	}
 	if p.DisplayFirstLast == nil {
-		errs = append(errs, fmt.Errorf("nil field 'DisplayFirstLast'"))
+		errs = append(errs, fmt.Errorf("nil field 'DisplayFirstLast' "+utils.Sad))
 	}
 	if p.RosterStatus == nil {
-		errs = append(errs, fmt.Errorf("nil field 'RosterStatus'"))
+		errs = append(errs, fmt.Errorf("nil field 'RosterStatus' "+utils.Sad))
 	}
 	if p.FromYear == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FromYear'"))
+		errs = append(errs, fmt.Errorf("nil field 'FromYear' "+utils.Sad))
 	}
 	if p.ToYear == nil {
-		errs = append(errs, fmt.Errorf("nil field 'ToYear'"))
+		errs = append(errs, fmt.Errorf("nil field 'ToYear' "+utils.Sad))
 	}
 	if p.PlayerCode == nil {
-		errs = append(errs, fmt.Errorf("nil field 'PlayerCode'"))
+		errs = append(errs, fmt.Errorf("nil field 'PlayerCode' "+utils.Sad))
 	}
 	if p.PlayerSlug == nil {
-		errs = append(errs, fmt.Errorf("nil field 'PlayerSlug'"))
+		errs = append(errs, fmt.Errorf("nil field 'PlayerSlug' "+utils.Sad))
 	}
 	if p.TeamID == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamID'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamID' "+utils.Sad))
 	}
 	if p.TeamCity == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamCity'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamCity' "+utils.Sad))
 	}
 	if p.TeamName == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamName'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamName' "+utils.Sad))
 	}
 	if p.TeamAbbreviation == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamAbbreviation'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamAbbreviation' "+utils.Sad))
 	}
 	if p.TeamCode == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamCode'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamCode' "+utils.Sad))
 	}
 	if p.TeamSlug == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamSlug'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamSlug' "+utils.Sad))
 	}
 	if p.GamesPlayedFlag == nil {
-		errs = append(errs, fmt.Errorf("nil field 'GamesPlayedFlag'"))
+		errs = append(errs, fmt.Errorf("nil field 'GamesPlayedFlag' "+utils.Sad))
 	}
 	if p.OtherLeagueExperienceCh == nil {
-		errs = append(errs, fmt.Errorf("nil field 'OtherLeagueExperienceCh'"))
+		errs = append(errs, fmt.Errorf("nil field 'OtherLeagueExperienceCh' "+utils.Sad))
 	}
 	if len(errs) == 0 {
 		return
@@ -336,91 +336,91 @@ type LeagueGameLogGame struct {
 func (g *LeagueGameLogGame) LogNilFields() {
 	errs := []error{}
 	if g.SeasonID == nil {
-		errs = append(errs, fmt.Errorf("nil field 'SeasonID'"))
+		errs = append(errs, fmt.Errorf("nil field 'SeasonID' "+utils.Sad))
 	}
 	if g.TeamID == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamID'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamID' "+utils.Sad))
 	}
 	if g.TeamAbbreviation == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamAbbreviation'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamAbbreviation' "+utils.Sad))
 	}
 	if g.TeamName == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TeamName'"))
+		errs = append(errs, fmt.Errorf("nil field 'TeamName' "+utils.Sad))
 	}
 	if g.GameID == nil {
-		errs = append(errs, fmt.Errorf("nil field 'GameID'"))
+		errs = append(errs, fmt.Errorf("nil field 'GameID' "+utils.Sad))
 	}
 	if g.GameDate == nil {
-		errs = append(errs, fmt.Errorf("nil field 'GameDate'"))
+		errs = append(errs, fmt.Errorf("nil field 'GameDate' "+utils.Sad))
 	}
 	if g.Matchup == nil {
-		errs = append(errs, fmt.Errorf("nil field 'Matchup'"))
+		errs = append(errs, fmt.Errorf("nil field 'Matchup' "+utils.Sad))
 	}
 	if g.WL == nil {
-		errs = append(errs, fmt.Errorf("nil field 'WL'"))
+		errs = append(errs, fmt.Errorf("nil field 'WL' "+utils.Sad))
 	}
 	if g.MIN == nil {
-		errs = append(errs, fmt.Errorf("nil field 'MIN'"))
+		errs = append(errs, fmt.Errorf("nil field 'MIN' "+utils.Sad))
 	}
 	if g.FGM == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FGM'"))
+		errs = append(errs, fmt.Errorf("nil field 'FGM' "+utils.Sad))
 	}
 	if g.FGA == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FGA'"))
+		errs = append(errs, fmt.Errorf("nil field 'FGA' "+utils.Sad))
 	}
 	if g.FG_PCT == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FG_PCT'"))
+		errs = append(errs, fmt.Errorf("nil field 'FG_PCT' "+utils.Sad))
 	}
 	if g.FG3M == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FG3M'"))
+		errs = append(errs, fmt.Errorf("nil field 'FG3M' "+utils.Sad))
 	}
 	if g.FG3A == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FG3A'"))
+		errs = append(errs, fmt.Errorf("nil field 'FG3A' "+utils.Sad))
 	}
 	if g.FG3_PCT == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FG3_PCT'"))
+		errs = append(errs, fmt.Errorf("nil field 'FG3_PCT' "+utils.Sad))
 	}
 	if g.FTM == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FTM'"))
+		errs = append(errs, fmt.Errorf("nil field 'FTM' "+utils.Sad))
 	}
 	if g.FTA == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FTA'"))
+		errs = append(errs, fmt.Errorf("nil field 'FTA' "+utils.Sad))
 	}
 	if g.FT_PCT == nil {
-		errs = append(errs, fmt.Errorf("nil field 'FT_PCT'"))
+		errs = append(errs, fmt.Errorf("nil field 'FT_PCT' "+utils.Sad))
 	}
 	if g.OREB == nil {
-		errs = append(errs, fmt.Errorf("nil field 'OREB'"))
+		errs = append(errs, fmt.Errorf("nil field 'OREB' "+utils.Sad))
 	}
 	if g.DREB == nil {
-		errs = append(errs, fmt.Errorf("nil field 'DREB'"))
+		errs = append(errs, fmt.Errorf("nil field 'DREB' "+utils.Sad))
 	}
 	if g.REB == nil {
-		errs = append(errs, fmt.Errorf("nil field 'REB'"))
+		errs = append(errs, fmt.Errorf("nil field 'REB' "+utils.Sad))
 	}
 	if g.AST == nil {
-		errs = append(errs, fmt.Errorf("nil field 'AST'"))
+		errs = append(errs, fmt.Errorf("nil field 'AST' "+utils.Sad))
 	}
 	if g.STL == nil {
-		errs = append(errs, fmt.Errorf("nil field 'STL'"))
+		errs = append(errs, fmt.Errorf("nil field 'STL' "+utils.Sad))
 	}
 	if g.BLK == nil {
-		errs = append(errs, fmt.Errorf("nil field 'BLK'"))
+		errs = append(errs, fmt.Errorf("nil field 'BLK' "+utils.Sad))
 	}
 	if g.TOV == nil {
-		errs = append(errs, fmt.Errorf("nil field 'TOV'"))
+		errs = append(errs, fmt.Errorf("nil field 'TOV' "+utils.Sad))
 	}
 	if g.PF == nil {
-		errs = append(errs, fmt.Errorf("nil field 'PF'"))
+		errs = append(errs, fmt.Errorf("nil field 'PF' "+utils.Sad))
 	}
 	if g.PTS == nil {
-		errs = append(errs, fmt.Errorf("nil field 'PTS'"))
+		errs = append(errs, fmt.Errorf("nil field 'PTS' "+utils.Sad))
 	}
 	if g.PlusMinus == nil {
-		errs = append(errs, fmt.Errorf("nil field 'PlusMinus'"))
+		errs = append(errs, fmt.Errorf("nil field 'PlusMinus' "+utils.Sad))
 	}
 	if g.VideoAvailable == nil {
-		errs = append(errs, fmt.Errorf("nil field 'VideoAvailable'"))
+		errs = append(errs, fmt.Errorf("nil field 'VideoAvailable' "+utils.Sad))
 	}
 
 	if len(errs) == 0 {
@@ -789,7 +789,7 @@ func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDeta
 	unmarshalledBody := VideoDetailsAssetResp{}
 	err = json.Unmarshal(body, &unmarshalledBody)
 	if err != nil && strings.Contains(err.Error(), "invalid character '<'") {
-		return nil, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json when querying for %s", contextMeasure))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("received html response, expected json when querying for %s "+utils.Sad, contextMeasure))
 	} else if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
@@ -1145,7 +1145,7 @@ func BoxScoreTraditionalV2(gameID string) (*BoxScoreTraditionalV2Data, error) {
 		return nil, utils.ErrorWithTrace(err)
 	}
 	if strings.Contains(string(body), "html") {
-		return nil, utils.ErrorWithTrace(fmt.Errorf("received response body containing html"))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("received response body containing html " + utils.Sad))
 	}
 
 	unmarshalledBody := BoxScoreTraditionalV2Resp{}
@@ -1607,7 +1607,7 @@ func TeamInfoCommon(id int) (*TeamInfo, error) {
 		}
 	}
 	if receivedHeaders == nil || raw == nil {
-		return nil, utils.ErrorWithTrace(fmt.Errorf("could not find TeamInfoCommon resultSet (◞‸ ◟ ；)"))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("could not find TeamInfoCommon resultSet " + utils.Sad))
 	}
 	if err := validateHeaders(expectedHeaders, receivedHeaders); err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -1635,11 +1635,11 @@ func TeamInfoCommon(id int) (*TeamInfo, error) {
 
 func validateHeaders(expected, received []string) error {
 	if len(expected) != len(received) {
-		return (fmt.Errorf("expected headers to be of length %d, found %d", len(expected), len(received)))
+		return (fmt.Errorf("expected headers to be of length %d, found %d "+utils.Sad, len(expected), len(received)))
 	}
 	for i := range expected {
 		if expected[i] != received[i] {
-			return (fmt.Errorf("uh oh! mismatched headers! expected %s, found %s", expected[i], received[i]))
+			return (fmt.Errorf("uh oh! mismatched headers! expected %s, found %s "+utils.Sad, expected[i], received[i]))
 		}
 	}
 	return nil
@@ -1752,6 +1752,6 @@ func gameIDToSeasonTypeString(id string) (string, error) {
 	} else if strings.HasPrefix(id, "005") {
 		return "PlayIn", nil
 	} else {
-		return "", utils.ErrorWithTrace(fmt.Errorf("could not parse id"))
+		return "", utils.ErrorWithTrace(fmt.Errorf("could not parse id " + utils.Sad))
 	}
 }

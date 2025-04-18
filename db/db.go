@@ -42,7 +42,7 @@ func Close() error {
 	case errs := <-errChan:
 		return errors.Join(*errs...)
 	case <-ctx.Done():
-		return fmt.Errorf("timed out while trying to close database after %s", timeout)
+		return fmt.Errorf("timed out while trying to close database after %s "+utils.Sad, timeout)
 	}
 }
 
@@ -90,21 +90,21 @@ func validateDbRW(db *sqlx.DB) error {
 		return utils.ErrorWithTrace(err)
 	}
 	if readOnly != 0 {
-		return utils.ErrorWithTrace(fmt.Errorf("dbRW is somehow in read only mode (◞‸ ◟ ；)"))
+		return utils.ErrorWithTrace(fmt.Errorf("dbRW is somehow in read only mode " + utils.Sad))
 	}
 	var journalMode string
 	if err := db.QueryRow("PRAGMA journal_mode;").Scan(&journalMode); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if journalMode != "wal" {
-		return utils.ErrorWithTrace(fmt.Errorf("dbRW journal mode is somehow \"%s\" (◞‸ ◟ ；)", journalMode))
+		return utils.ErrorWithTrace(fmt.Errorf("dbRW journal mode is somehow \"%s\" "+utils.Sad, journalMode))
 	}
 	var foreignKeys int
 	if err := db.QueryRow("PRAGMA foreign_keys;").Scan(&foreignKeys); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if foreignKeys != 1 {
-		return utils.ErrorWithTrace(fmt.Errorf("dbRW somehow has foreign key constraints disabled (◞‸ ◟ ；)"))
+		return utils.ErrorWithTrace(fmt.Errorf("dbRW somehow has foreign key constraints disabled " + utils.Sad))
 	}
 	return nil
 }
@@ -115,21 +115,21 @@ func validateDbRO(db *sqlx.DB) error {
 		return utils.ErrorWithTrace(err)
 	}
 	if readOnly != 1 {
-		utils.ErrorWithTrace(fmt.Errorf("dbRO is somehow not in read only mode (◞‸ ◟ ；)"))
+		utils.ErrorWithTrace(fmt.Errorf("dbRO is somehow not in read only mode " + utils.Sad))
 	}
 	var journalMode string
 	if err := db.QueryRow("PRAGMA journal_mode;").Scan(&journalMode); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if journalMode != "wal" {
-		return utils.ErrorWithTrace(fmt.Errorf("dbRW journal mode is somehow \"%s\" (◞‸ ◟ ；)", journalMode))
+		return utils.ErrorWithTrace(fmt.Errorf("dbRW journal mode is somehow \"%s\" "+utils.Sad, journalMode))
 	}
 	var foreignKeys int
 	if err := db.QueryRow("PRAGMA foreign_keys;").Scan(&foreignKeys); err != nil {
 		return utils.ErrorWithTrace(err)
 	}
 	if foreignKeys != 1 {
-		return utils.ErrorWithTrace(fmt.Errorf("dbRW somehow has foreign key constraints disabled (◞‸ ◟ ；)"))
+		return utils.ErrorWithTrace(fmt.Errorf("dbRW somehow has foreign key constraints disabled " + utils.Sad))
 	}
 	return nil
 }
@@ -1006,7 +1006,7 @@ func SelectVideoByJobId(id int, timeout ...time.Duration) (*Video, error) {
 	res := Video{}
 	if err := get(tx, &ctx, &res, "SELECT * FROM videos WHERE job_id = ?;", id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, utils.ErrorWithTrace(fmt.Errorf("unable to find a video associated with this job (◞‸ ◟ ；)"))
+			return nil, utils.ErrorWithTrace(fmt.Errorf("unable to find a video associated with this job " + utils.Sad))
 		} else {
 			return nil, utils.ErrorWithTrace(err)
 		}
@@ -1386,7 +1386,7 @@ func exec(tx *sqlx.Tx, ctx *context.Context, query string, args ...any) error {
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting tx.Exec"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting tx.Exec " + utils.Sad))
 				return
 			default:
 				_, err := tx.Exec(query, args...)
@@ -1411,7 +1411,7 @@ func selekt(tx *sqlx.Tx, ctx *context.Context, dest any, query string, args ...a
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting tx.Select"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting tx.Select " + utils.Sad))
 				return
 			default:
 				err := tx.Select(dest, query, args...)
@@ -1436,7 +1436,7 @@ func namedExec(tx *sqlx.Tx, ctx *context.Context, query string, arg any) error {
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting tx.NamedExec"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting tx.NamedExec " + utils.Sad))
 				return
 			default:
 				_, err := tx.NamedExec(query, arg)
@@ -1461,7 +1461,7 @@ func stmtDotGet(stmt *sqlx.Stmt, ctx *context.Context, dest any, args ...any) er
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting stmt.Get"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting stmt.Get " + utils.Sad))
 				return
 			default:
 				err := stmt.Get(dest, args...)
@@ -1486,7 +1486,7 @@ func stmtDotQueryRow(stmt *sql.Stmt, ctx *context.Context, args []any, dest []an
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting stmt.QueryRow"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting stmt.QueryRow " + utils.Sad))
 				return
 			default:
 				err := stmt.QueryRow(args...).Scan(dest...)
@@ -1511,7 +1511,7 @@ func commitTx(tx *sqlx.Tx, ctx *context.Context) error {
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out will attempting tx.Commit"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out will attempting tx.Commit " + utils.Sad))
 				return
 			default:
 				err := tx.Commit()
@@ -1539,7 +1539,7 @@ func walCheckpoint(ctx *context.Context) error {
 		for {
 			select {
 			case <-(*ctx).Done():
-				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting wal_checkpoint(TRUNCATE)"))
+				errChan <- utils.ErrorWithTrace(fmt.Errorf("timed out while attempting wal_checkpoint(TRUNCATE) " + utils.Sad))
 				return
 			default:
 				err := dbRW.QueryRow("PRAGMA wal_checkpoint(TRUNCATE);").Scan(&mode, &pagesWritten, &pagesMoved)
@@ -1581,7 +1581,7 @@ func parseTimeout(timeout ...time.Duration) (time.Duration, error) {
 		return DEFAULT_TIMEOUT, nil
 	}
 	if len(timeout) > 1 {
-		return 0, utils.ErrorWithTrace(fmt.Errorf("expected single timeout value, received %d", len(timeout)))
+		return 0, utils.ErrorWithTrace(fmt.Errorf("expected single timeout value, received %d "+utils.Sad, len(timeout)))
 	}
 	return timeout[0], nil
 }

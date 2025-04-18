@@ -296,10 +296,10 @@ func main() {
 		assets, err := getAssets(season, gameIDs, playerIDs)
 		if err != nil {
 			log.Println(utils.ErrorWithTrace(err))
-			return c.Render(200, "error", "unable to process request (◞‸ ◟ ；)")
+			return c.Render(200, "error", "unable to process request "+utils.Sad)
 		}
 		if len(assets) == 0 {
-			return c.Render(200, "error", "no assets found (◞‸ ◟ ；)")
+			return c.Render(200, "error", "no assets found "+utils.Sad)
 		}
 		job := db.NewJob(playerIDs, gameIDs, season)
 		job, err = db.InsertJob(job)
@@ -328,7 +328,7 @@ func main() {
 			return c.Render(200, "job", jobState)
 		}
 		if len(games) == 0 {
-			jobState.Error = "did not find any games (◞‸ ◟ ；)"
+			jobState.Error = "did not find any games " + utils.Sad
 			return c.Render(200, "job", jobState)
 		}
 		matchups := []string{}
@@ -516,7 +516,7 @@ var contextMeasures = []nba.VideoDetailsAssetContextMeasure{
 
 func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.VideoDetailsAssetEntry, error) {
 	if utils.IsInvalidSeason(season) {
-		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided :%s", season))
+		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided: '%s' "+utils.Sad, season))
 	}
 	assetChan := make(chan nba.VideoDetailsAssetEntry, 1024)
 	errChan := make(chan error, 1024)
