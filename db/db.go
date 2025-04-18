@@ -1234,6 +1234,127 @@ func GetPlayerPlayerSearchInfoBySeason(season string, timeout ...time.Duration) 
 	return info, nil
 }
 
+type Asset struct {
+	Id          int       `db:"id"`
+	Description string    `db:"asset_description"`
+	URL         string    `db:"asset_url"`
+	IsDunk      bool      `db:"is_dunk"`
+	BoxScoreID  int       `db:"box_score_id"`
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+}
+
+func NewAsset(description, url string, isDunk bool, boxScoreID int) *Asset {
+	return &Asset{
+		Description: description,
+		URL:         url,
+		IsDunk:      isDunk,
+		BoxScoreID:  boxScoreID,
+	}
+}
+
+type ContextMeasure struct {
+	Id      int    `db:"id"`
+	Measure string `db:"measure"`
+}
+
+func NewContextMeasure(measure string) *ContextMeasure {
+	return &ContextMeasure{Measure: measure}
+}
+
+// Represents an entry in the assets_measures join table
+type AssetsMeasuresEntry struct {
+	Id               int       `db:"id"`
+	ContextMeasureID int       `db:"context_measure_id"`
+	AssetID          int       `db:"asset_id"`
+	CreatedAt        time.Time `db:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at"`
+}
+
+func NewAssetsMeasuresEntry(contextMeasureID, assetID int) *AssetsMeasuresEntry {
+	return &AssetsMeasuresEntry{
+		ContextMeasureID: contextMeasureID,
+		AssetID:          assetID,
+	}
+}
+
+func InsertVideoAssets(assets []Asset, contextMeasure ContextMeasure, timeout ...time.Duration) error {
+	parsedTimeout, err := parseTimeout(timeout...)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
+	defer cancel()
+	tx, err := dbRW.Beginx()
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+
+	insertAssetsQuery := `
+		INSERT OR IGNORE INTO assets (
+			asset_description,
+			asset_url,
+			is_dunk,
+			box_score_id
+		) VALUES (
+			:asset_description,
+			:asset_url,
+			:is_dunk,
+			:box_score_id
+		)
+	`
+	batchSize := 500
+	if err := batchInsert(tx, &ctx, batchSize, insertAssetsQuery, assets); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+
+	assetURLs := make([]string, 0, len(assets))
+	for _, a := range assets {
+		assetURLs = append(assetURLs, a.URL)
+	}
+
+	selectAssetIDQuery, args, err := sqlx.In("SELECT id FROM assets WHERE asset_url IN (?);", assetURLs)
+	if err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	selectAssetIDQuery = tx.Rebind(selectAssetIDQuery)
+
+	// Grab the IDs of the assets we just inserted
+	assetIDs := []int{}
+	if err := selekt(tx, &ctx, &assetIDs, selectAssetIDQuery, args...); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+
+	// Grab the ID of the related context measure
+	var contextMeasureID int
+	if err := get(tx, &ctx, &contextMeasureID, "SELECT id FROM context_measures WHERE measure = ?;", contextMeasure); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	if contextMeasureID == 0 {
+		return utils.ErrorWithTrace(fmt.Errorf("could not find id for context measure \"%s\"", contextMeasure.Measure))
+	}
+
+	assetsMeasuresEntries := make([]AssetsMeasuresEntry, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		newEntry := NewAssetsMeasuresEntry(contextMeasureID, id)
+		assetsMeasuresEntries = append(assetsMeasuresEntries, *newEntry)
+	}
+
+	insertAssetsMeasuresQuery := `
+		INSERT OR IGNORE INTO assets_measures (
+			context_measure_id,
+			asset_id
+		) VALUES (
+			:context_measure_id,
+			:asset_id
+		);
+	`
+	if err := batchInsert(tx, &ctx, batchSize, insertAssetsMeasuresQuery, assetsMeasuresEntries); err != nil {
+		return utils.ErrorWithTrace(err)
+	}
+	return nil
+}
+
 func get(tx *sqlx.Tx, ctx *context.Context, dest any, query string, args ...any) error {
 	errChan := make(chan error, 1)
 	defer close(errChan)
