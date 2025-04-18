@@ -258,10 +258,10 @@ func SelectAllGames(timeout ...time.Duration) ([]DatabaseGame, error) {
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
-	defer tx.Rollback()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	defer tx.Rollback()
 	games := []DatabaseGame{}
 	if err := selekt(tx, &ctx, &games, "SELECT * FROM games ORDER BY game_date DESC;"); err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -284,10 +284,10 @@ func SelectGamesBySeason(season string, timeout ...time.Duration) ([]DatabaseGam
 	defer cancel()
 
 	tx, err := dbRO.Beginx()
-	defer tx.Rollback()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	defer tx.Rollback()
 
 	games := []DatabaseGame{}
 	if err := selekt(tx, &ctx, &games, "SELECT * FROM games WHERE season = ? ORDER BY game_date DESC;", season); err != nil {
@@ -974,6 +974,7 @@ func InsertVideo(video *Video, timeout ...time.Duration) error {
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
+	defer tx.Rollback()
 
 	query := `
 		INSERT OR IGNORE INTO videos (
@@ -1003,6 +1004,7 @@ func SelectVideoByJobId(id int, timeout ...time.Duration) (*Video, error) {
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	defer tx.Rollback()
 	res := Video{}
 	if err := get(tx, &ctx, &res, "SELECT * FROM videos WHERE job_id = ?;", id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1200,10 +1202,11 @@ func GetPlayerPlayerSearchInfoBySeason(season string, timeout ...time.Duration) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), parsedTimeout)
 	defer cancel()
-	tx, err := dbRW.Beginx()
+	tx, err := dbRO.Beginx()
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
 	}
+	defer tx.Rollback()
 
 	query := `
 		SELECT	p.id					AS player_id,
@@ -1289,6 +1292,7 @@ func InsertVideoAssets(assets []Asset, contextMeasure ContextMeasure, timeout ..
 	if err != nil {
 		return utils.ErrorWithTrace(err)
 	}
+	defer tx.Rollback()
 
 	insertAssetsQuery := `
 		INSERT OR IGNORE INTO assets (
