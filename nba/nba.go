@@ -555,7 +555,7 @@ func DedupeLeagueGameLogGames(games []LeagueGameLogGame) ([]LeagueGameLogGame, e
 	return res, nil
 }
 
-type VideoDetailAsset struct {
+type VideoDetailsAssetEntry struct {
 	GameID      *string
 	EventID     *float64
 	Year        *float64
@@ -775,7 +775,7 @@ var VideoDetailsAssetContextMeasures = struct {
 	PTS:                "PTS",
 }
 
-func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailAsset, error) {
+func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDetailsAssetContextMeasure) ([]VideoDetailsAssetEntry, error) {
 	seasonType, err := gameIDToSeasonTypeString(gameID)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -801,9 +801,9 @@ func VideoDetailsAsset(season, gameID, playerID string, contextMeasure VideoDeta
 		return nil, utils.ErrorWithTrace(fmt.Errorf("playlist array and urls array lengths do not match (╯°□°)╯︵ ɹoɹɹƎ"))
 	}
 
-	res := make([]VideoDetailAsset, 0, len(Playlist))
+	res := make([]VideoDetailsAssetEntry, 0, len(Playlist))
 	for i := range Playlist {
-		entry := VideoDetailAsset{
+		entry := VideoDetailsAssetEntry{
 			GameID:      Playlist[i].GameID,
 			EventID:     Playlist[i].EventID,
 			Year:        Playlist[i].Year,

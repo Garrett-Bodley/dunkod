@@ -514,11 +514,11 @@ var contextMeasures = []nba.VideoDetailsAssetContextMeasure{
 	nba.VideoDetailsAssetContextMeasures.BLK,
 }
 
-func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.VideoDetailAsset, error) {
+func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.VideoDetailsAssetEntry, error) {
 	if utils.IsInvalidSeason(season) {
 		return nil, utils.ErrorWithTrace(fmt.Errorf("invalid season provided :%s", season))
 	}
-	assetChan := make(chan nba.VideoDetailAsset, 1024)
+	assetChan := make(chan nba.VideoDetailsAssetEntry, 1024)
 	errChan := make(chan error, 1024)
 	wg := sync.WaitGroup{}
 
@@ -553,14 +553,14 @@ func getAssets(season string, gameIDs []string, playerIDs []string) ([]nba.Video
 		return nil, errors.Join(errs...)
 	}
 
-	assetMap := map[float64]nba.VideoDetailAsset{}
+	assetMap := map[float64]nba.VideoDetailsAssetEntry{}
 	for a := range assetChan {
 		if a.EventID == nil {
 			continue
 		}
 		assetMap[*a.EventID] = a
 	}
-	assets := make([]nba.VideoDetailAsset, 0, len(assetMap))
+	assets := make([]nba.VideoDetailsAssetEntry, 0, len(assetMap))
 	for _, v := range assetMap {
 		assets = append(assets, v)
 	}
