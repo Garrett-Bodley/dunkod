@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -224,7 +225,10 @@ func main() {
 			}
 		}
 
-		filteredGames := filterGamesByQuery(allGames, query)
+		filteredGames, err := filterGamesByQuery(allGames, query)
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		}
 	outer2:
 		for _, g := range filteredGames {
 			for _, id := range selectedGameIDs {
@@ -267,7 +271,10 @@ func main() {
 			}
 		}
 
-		filtered := filterPlayersByQuery(seasonPlayers, query)
+		filtered, err := filterPlayersByQuery(seasonPlayers, query)
+		if err != nil {
+			return utils.ErrorWithTrace(err)
+		}
 	outer2:
 		for _, p := range filtered {
 			for _, cid := range checked {
@@ -401,108 +408,39 @@ func main() {
 	e.Logger.Fatal(e.Start(":8080"))
 }
 
-func scrapingDaemon() {
-	log.Println("scraping all games")
-	scrapeAllGames()
-	ticker := time.NewTicker(30 * time.Minute)
-	for range ticker.C {
-		log.Println("scraping all games")
-		scrapeAllGames()
-	}
-}
-
-func scrapeAllGames() error {
-	dbGames := []db.DatabaseGame{}
-
-	for _, t := range config.SeasonTypes {
-		fmt.Println(t)
-		for _, s := range config.ValidSeasons {
-			hash := map[string][]nba.LeagueGameLogGame{}
-			games, err := nba.LeagueGameLog(s, t)
-			if err != nil {
-				return err
-			}
-
-			for _, g := range games {
-				// Skip if no available video
-				if *g.VideoAvailable == float64(0) {
-					continue
-				}
-				if _, exists := hash[*g.GameID]; !exists {
-					hash[*g.GameID] = make([]nba.LeagueGameLogGame, 0, 2)
-				}
-				hash[*g.GameID] = append(hash[*g.GameID], g)
-			}
-
-			for k, v := range hash {
-				a, b := v[0], v[1]
-				var winner nba.LeagueGameLogGame
-				var loser nba.LeagueGameLogGame
-				var homeTeam nba.LeagueGameLogGame
-				var awayTeam nba.LeagueGameLogGame
-				if a.PTS == nil || b.PTS == nil {
-					log.Printf("found matchup containing nil points field: \n\tMatchup: %s\n\tGameID: %s", *a.Matchup, k)
-					continue
-				}
-				if *a.PTS > *b.PTS {
-					winner, loser = a, b
-				} else {
-					winner, loser = b, a
-				}
-
-				if strings.Contains(*a.Matchup, "@") {
-					homeTeam, awayTeam = a, b
-				} else {
-					homeTeam, awayTeam = b, a
-				}
-
-				dbGames = append(dbGames, db.DatabaseGame{
-					ID:          k,
-					Season:      s,
-					GameDate:    *a.GameDate,
-					Matchup:     *winner.Matchup,
-					SeasonType:  t,
-					WinnerName:  *winner.TeamName,
-					WinnerID:    int(*winner.TeamID),
-					WinnerScore: int(*winner.PTS),
-					LoserName:   *loser.TeamName,
-					LoserID:     int(*loser.TeamID),
-					LoserScore:  int(*loser.PTS),
-					HomeTeamId:  int(*homeTeam.TeamID),
-					AwayTeamId:  int(*awayTeam.TeamID),
-				})
-			}
-		}
-		if err := db.InsertGames(dbGames); err != nil {
-			log.Println(err)
-		}
-	}
-	fmt.Println("done")
-	return nil
-}
-
-func filterGamesByQuery(games []db.DatabaseGame, query string) []db.DatabaseGame {
+func filterGamesByQuery(games []db.DatabaseGame, query string) ([]db.DatabaseGame, error) {
 	filtered := []db.DatabaseGame{}
-	query = strings.ToLower(query)
+	words := strings.Fields(strings.ToLower(utils.RemoveDiacritics(query)))
+	pattern := strings.Join(words, "|")
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
 	for _, g := range games {
 		searchString := strings.ToLower(fmt.Sprintf("%s,%s,%s", g.Matchup, g.WinnerName, g.LoserName))
-		if strings.Contains(searchString, query) {
+		if re.Match([]byte(searchString)) {
 			filtered = append(filtered, g)
 		}
 	}
-	return filtered
+	return filtered, nil
 }
 
-func filterPlayersByQuery(players []db.PlayerSearchInfo, query string) []db.PlayerSearchInfo {
+func filterPlayersByQuery(players []db.PlayerSearchInfo, query string) ([]db.PlayerSearchInfo, error) {
 	filtered := []db.PlayerSearchInfo{}
-	query = strings.ToLower(query)
+	words := strings.Fields(strings.ToLower(utils.RemoveDiacritics(query)))
+	pattern := strings.Join(words, "|")
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, utils.ErrorWithTrace(err)
+	}
+
 	for _, p := range players {
 		searchString := p.SearchString()
-		if strings.Contains(searchString, query) {
+		if re.Match([]byte(searchString)) {
 			filtered = append(filtered, p)
 		}
 	}
-	return filtered
+	return filtered, nil
 }
 
 var contextMeasures = []nba.VideoDetailsAssetContextMeasure{
