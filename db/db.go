@@ -462,7 +462,7 @@ func SelectAllPlayers(timeout ...time.Duration) ([]Player, error) {
 	return players, nil
 }
 
-func SelectPlayersBySeason(season string, timeout ...time.Duration) ([]Player, error) {
+func SelectPlayersWhoPlayedBySeason(season string, timeout ...time.Duration) ([]Player, error) {
 	parsedTimeout, err := parseTimeout(timeout...)
 	if err != nil {
 		return nil, utils.ErrorWithTrace(err)
@@ -477,11 +477,20 @@ func SelectPlayersBySeason(season string, timeout ...time.Duration) ([]Player, e
 	}
 
 	query := `
-		SELECT p.*
-		FROM   players
-		INNER JOIN box_score_player_stats bsps
-			ON p.id = bsps.player_id
-		WHERE  bsps.season = ?
+		SELECT
+			*
+		FROM
+			players
+		WHERE
+			id IN (
+				SELECT DISTINCT
+					player_id
+				FROM
+					box_score_player_stats
+				WHERE
+					season = ?
+					AND dnp = FALSE
+			);
 	`
 	players := []Player{}
 	if err := selekt(tx, &ctx, &players, query, season); err != nil {

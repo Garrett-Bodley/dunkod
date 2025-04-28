@@ -1740,7 +1740,6 @@ func maybe[T any](x any) *T {
 }
 
 func gameIDToSeasonTypeString(id string) (string, error) {
-	log.Println(id)
 	if strings.HasPrefix(id, "001") {
 		return "Pre+Season", nil
 	} else if strings.HasPrefix(id, "002") {
