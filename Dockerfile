@@ -22,6 +22,6 @@ WORKDIR /app
 COPY --from=builder /app/dunkod .
 COPY --from=builder /app/db/migrations ./db/migrations
 COPY --from=builder /app/views ./views
-COPY --from=builder /app/assets ./assets
+COPY --from=builder /app/static ./static
 
-CMD ./dunkod -p 2>&1 | tee -a ../logs/log.txt
+CMD ["sh", "-c", "./dunkod -p 2>&1 | tee -a ../logs/log.txt"]

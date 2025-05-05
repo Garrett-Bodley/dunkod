@@ -157,7 +157,7 @@ func main() {
 	e.Use(middleware.Logger())
 
 	e.Renderer = newTemplate()
-	e.Static("/assets", "assets")
+	e.Static("/static", "static")
 
 	e.GET("/", func(c echo.Context) error {
 		season := "2024-25"

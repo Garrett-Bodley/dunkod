@@ -11,6 +11,7 @@
       integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
       crossorigin="anonymous"
     ></script>
+    <script src="/static/index.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/loading-states.js"></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
     <style>
@@ -47,11 +48,11 @@
 {{ end }}
 
 {{ block "favicon" . }}
-  <link rel="icon" type="image/png" href="/assets/favicon-96x96.png" sizes="96x96" />
-  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
-  <link rel="shortcut icon" href="/assets/favicon.ico" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
-  <link rel="manifest" href="/assets/site.webmanifest" />
+  <link rel="icon" type="image/png" href="/static/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="shortcut icon" href="/static/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png" />
+  <link rel="manifest" href="/static/site.webmanifest" />
 {{ end }}
 
 {{ block "season" . }}
